@@ -1,0 +1,743 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Dot Calibration Experiment</title>
+
+  <script src="https://unpkg.com/jspsych@8.2.3"></script>
+  <link href="https://unpkg.com/jspsych@8.2.3/css/jspsych.css" rel="stylesheet" type="text/css" />
+  <script src="https://unpkg.com/@jspsych/plugin-html-keyboard-response@2.1.0"></script>
+  <script src="https://unpkg.com/@jspsych/plugin-instructions@2.1.0"></script>
+  <script src="https://unpkg.com/@jspsych/plugin-call-function@2.1.0"></script>
+
+  <style>
+    body { background: white; }
+
+    .task-wrap {
+      width: 950px;
+      margin: 0 auto;
+      text-align: center;
+    }
+
+    .question-title {
+      font-size: 28px;
+      margin-bottom: 12px;
+      font-weight: 600;
+      min-height: 34px;
+    }
+
+    .question-subtitle {
+      font-size: 18px;
+      margin-bottom: 20px;
+      color: #444;
+      min-height: 22px;
+    }
+
+    .pentagon-area {
+      width: 900px;
+      height: 620px;
+      margin: 0 auto;
+      position: relative;
+    }
+
+    .option-btn {
+      position: absolute;
+      width: 150px;
+      height: 150px;
+      border: none;
+      background: transparent;
+      padding: 0;
+      cursor: pointer;
+    }
+
+    .option-btn svg {
+      overflow: visible;
+    }
+
+    .pos-0 { left: 375px; top: 10px; }
+    .pos-1 { left: 120px; top: 170px; }
+    .pos-2 { left: 630px; top: 170px; }
+    .pos-3 { left: 220px; top: 400px; }
+    .pos-4 { left: 530px; top: 400px; }
+
+    .fixation {
+      font-size: 64px;
+      font-weight: 600;
+    }
+
+    .small-note {
+      font-size: 16px;
+      color: #666;
+      margin-top: 12px;
+    }
+
+    .subject-wrap {
+      max-width: 700px;
+      margin: 120px auto;
+      text-align: center;
+      font-size: 24px;
+      line-height: 1.6;
+    }
+
+    .subject-input {
+      font-size: 28px;
+      padding: 10px 14px;
+      width: 220px;
+      text-align: center;
+      margin-top: 16px;
+    }
+
+    .subject-btn {
+      font-size: 22px;
+      padding: 10px 22px;
+      margin-top: 20px;
+      cursor: pointer;
+    }
+
+    .error-text {
+      color: #b00020;
+      margin-top: 12px;
+      font-size: 18px;
+      min-height: 24px;
+    }
+  </style>
+</head>
+<body></body>
+
+<script>
+  /**********************
+   * 1. CONFIG
+   **********************/
+  const CONFIG = {
+    durations: [500, 1500],
+    steps: [4, 6, 8, 10, 12, 14, 16, 18, 20],
+    families: [1, 2, 3, 4],
+    repsPerCondition: 8,
+
+    fixationDuration: 700,
+    interTrialInterval: 500,
+    breakEvery: 72,
+
+    nOptions: 5,
+    svgSize: 120,
+    stimulusRadius: 52
+  };
+
+  const ALLOWED_STEPS_BY_DURATION_AND_FAMILY = {
+    500: {
+      1: [3, 4],
+      2: [5, 6],
+      3: [6, 7],
+      4: [7, 8]
+    },
+    1500: {
+      1: [2, 3],
+      2: [3, 4],
+      3: [5, 6],
+      4: [6, 7]
+    }
+  };
+
+  /**********************
+   * 2. GLOBAL STATE
+   **********************/
+  const experimentState = {
+    subjectID: ""
+  };
+
+  const trialState = {
+    currentTrial: null,
+    trialStartTime: null,
+    choiceScreenStartTime: null
+  };
+
+  /**********************
+   * 3. HELPERS
+   **********************/
+  function shuffle(array) {
+    const arr = [...array];
+    for (let i = arr.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [arr[i], arr[j]] = [arr[j], arr[i]];
+    }
+    return arr;
+  }
+
+  function mulberry32(seed) {
+    return function() {
+      let t = seed += 0x6D2B79F5;
+      t = Math.imul(t ^ (t >>> 15), t | 1);
+      t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+      return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+    };
+  }
+
+  function mean(arr) {
+    if (!arr.length) return null;
+    return arr.reduce((a, b) => a + b, 0) / arr.length;
+  }
+
+  function positionName(index) {
+    const map = {
+      0: "top",
+      1: "upper_left",
+      2: "upper_right",
+      3: "lower_left",
+      4: "lower_right"
+    };
+    return map[index];
+  }
+
+  function escapeCSV(value) {
+    if (value === null || value === undefined) return "";
+    const str = String(value);
+    if (str.includes('"') || str.includes(",") || str.includes("\n")) {
+      return '"' + str.replace(/"/g, '""') + '"';
+    }
+    return str;
+  }
+
+  function rowsToCSV(rows, columns) {
+    const csvLines = [
+      columns.join(","),
+      ...rows.map(row => columns.map(col => escapeCSV(row[col])).join(","))
+    ];
+    return csvLines.join("\n");
+  }
+
+  function downloadCSV(filename, text) {
+    const blob = new Blob([text], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.setAttribute("href", url);
+    link.setAttribute("download", filename);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+  }
+
+  /**********************
+   * 4. CONDITION LOGIC
+   **********************/
+  function getCountsFromFamilyAndStep(family, step) {
+    if (family === 1) return [100, 100-step, 100-2*step, 100-3*step, 100-4*step];
+    if (family === 2) return [100, 100-step, 100-step, 100-2*step, 100-2*step];
+    if (family === 3) return [100, 100-step, 100-step, 100-step, 100-2*step];
+    if (family === 4) return [100, 100-step, 100-step, 100-step, 100-step];
+    throw new Error("Unknown family.");
+  }
+
+  function familyLabel(family) {
+    if (family === 1) return "all_different";
+    if (family === 2) return "2_and_3_same__4_and_5_same";
+    if (family === 3) return "2_to_4_same";
+    if (family === 4) return "2_to_5_same";
+    return "unknown";
+  }
+
+  function getAllowedSteps(duration, family) {
+    return ALLOWED_STEPS_BY_DURATION_AND_FAMILY[duration]?.[family] ?? [];
+  }
+
+  function buildConditionSpecs() {
+    const specs = [];
+
+    for (const duration of CONFIG.durations) {
+      for (const family of CONFIG.families) {
+        for (const step of getAllowedSteps(duration, family)) {
+          specs.push({ duration, family, step });
+        }
+      }
+    }
+
+    return specs;
+  }
+
+  /**********************
+   * 5. DOT DRAWING
+   **********************/
+  function generateDots(nDots, seed) {
+    const rand = mulberry32(seed);
+    const points = [];
+    const center = CONFIG.svgSize / 2;
+    const margin = 10;
+    const radius = CONFIG.stimulusRadius - 6;
+
+    let attempts = 0;
+    while (points.length < nDots && attempts < nDots * 300) {
+      attempts++;
+      const x = margin + rand() * (CONFIG.svgSize - 2 * margin);
+      const y = margin + rand() * (CONFIG.svgSize - 2 * margin);
+
+      const dx = x - center;
+      const dy = y - center;
+      const inside = (dx * dx + dy * dy) <= radius * radius;
+      if (!inside) continue;
+
+      let overlaps = false;
+      for (const p of points) {
+        const ddx = x - p.x;
+        const ddy = y - p.y;
+        if (ddx * ddx + ddy * ddy < 18) {
+          overlaps = true;
+          break;
+        }
+      }
+      if (!overlaps) points.push({ x, y });
+    }
+    return points;
+  }
+
+  function renderOptionSVG(option, showDots = true) {
+    const center = CONFIG.svgSize / 2;
+    const radius = CONFIG.stimulusRadius;
+
+    const outline = `
+      <circle cx="${center}" cy="${center}" r="${radius}"
+        fill="white" stroke="black" stroke-width="3"></circle>
+    `;
+
+    const dots = showDots
+      ? option.points.map(p => {
+          return `<circle cx="${p.x.toFixed(1)}" cy="${p.y.toFixed(1)}" r="2.6" fill="black"></circle>`;
+        }).join("")
+      : "";
+
+    return `
+      <svg width="${CONFIG.svgSize}" height="${CONFIG.svgSize}" viewBox="0 0 ${CONFIG.svgSize} ${CONFIG.svgSize}">
+        ${outline}
+        ${dots}
+      </svg>
+    `;
+  }
+
+  /**********************
+   * 6. BUILD TRIALS
+   **********************/
+  function buildOneTrial(trialIndex, duration, family, step) {
+    const baseCounts = getCountsFromFamilyAndStep(family, step);
+    const shuffledCounts = shuffle(baseCounts);
+    const correctPosition = shuffledCounts.indexOf(100);
+
+    const options = shuffledCounts.map((nDots, optionIndex) => {
+      const points = generateDots(nDots, trialIndex * 100 + optionIndex * 17 + 1);
+      return { nDots, points };
+    });
+
+    return {
+      trialIndex,
+      duration,
+      family,
+      family_label: familyLabel(family),
+      step,
+      condition_label: `fam${family}_step${step}_dur${duration}`,
+      correctPosition,
+      options
+    };
+  }
+
+  function buildAllTrials() {
+    const trials = [];
+    let trialCounter = 1;
+    const conditionSpecs = buildConditionSpecs();
+
+    for (const { duration, family, step } of conditionSpecs) {
+      for (let rep = 0; rep < CONFIG.repsPerCondition; rep++) {
+        trials.push(buildOneTrial(trialCounter++, duration, family, step));
+      }
+    }
+
+    return shuffle(trials);
+  }
+
+  const conditionSpecs = buildConditionSpecs();
+  const allTrials = buildAllTrials();
+
+  /**********************
+   * 7. RENDER DISPLAYS
+   **********************/
+  function renderStimulusDisplay(trialConfig) {
+    const optionHTML = trialConfig.options.map((opt, idx) => {
+      return `
+        <div class="option-btn pos-${idx}" style="cursor: default;">
+          ${renderOptionSVG(opt, true)}
+        </div>
+      `;
+    }).join("");
+
+    return renderTaskDisplayFrame(optionHTML, "Which circle has the most dots?", "Look carefully.");
+  }
+
+  function renderChoiceDisplay() {
+    const trialConfig = trialState.currentTrial;
+    const optionHTML = trialConfig.options.map((opt, idx) => {
+      return `
+        <button class="option-btn pos-${idx} choice-option"
+                data-index="${idx}"
+                aria-label="option ${idx + 1}">
+          ${renderOptionSVG(opt, false)}
+        </button>
+      `;
+    }).join("");
+
+    return renderTaskDisplayFrame(optionHTML, "Which circle has the most dots?", "Look carefully.");
+  }
+
+  function renderTaskDisplayFrame(optionHTML, titleText, subtitleText) {
+    return `
+      <div class="task-wrap">
+        <div class="question-title">${titleText}</div>
+        <div class="question-subtitle">${subtitleText}</div>
+        <div class="pentagon-area">
+          ${optionHTML}
+        </div>
+      </div>
+    `;
+  }
+
+  /**********************
+   * 8. INIT STATE
+   **********************/
+  function initializeTrialState(trialConfig) {
+    trialState.currentTrial = trialConfig;
+    trialState.trialStartTime = performance.now();
+    trialState.choiceScreenStartTime = null;
+  }
+
+  /**********************
+   * 9. JSPSYCH SETUP
+   **********************/
+  const jsPsych = initJsPsych({
+    on_finish: function() {
+      const raw = jsPsych.data.get().values();
+
+      const cleaned = raw.map(row => ({
+        subject_id: experimentState.subjectID || null,
+        event: row.event ?? null,
+        rt: row.rt ?? null,
+        trial_number: row.trial_number ?? null,
+        duration: row.duration ?? null,
+        family: row.family ?? null,
+        family_label: row.family_label ?? null,
+        step: row.step ?? null,
+        condition_label: row.condition_label ?? null,
+        correct_position: row.correct_position ?? null,
+        correct_position_name:
+          row.correct_position !== undefined && row.correct_position !== null
+            ? positionName(row.correct_position)
+            : null,
+        dot_counts: row.dot_counts ?? null,
+        choice_index: row.choice_index ?? null,
+        choice_position_name:
+          row.choice_index !== undefined && row.choice_index !== null
+            ? positionName(row.choice_index)
+            : null,
+        elapsed_ms_from_trial_start: row.elapsed_ms_from_trial_start ?? null,
+        correct: row.correct ?? null
+      }));
+
+      const choiceRows = cleaned.filter(r => r.event === "choice");
+
+      const summary = [];
+      for (const { duration, family, step } of conditionSpecs) {
+        const rows = choiceRows.filter(r =>
+          Number(r.duration) === duration &&
+          Number(r.family) === family &&
+          Number(r.step) === step
+        );
+
+        summary.push({
+          subject_id: experimentState.subjectID || null,
+          duration: duration,
+          family: family,
+          family_label: familyLabel(family),
+          step: step,
+          reps: rows.length,
+          choice1_accuracy: rows.length ? mean(rows.map(r => Number(r.correct === true))) : null,
+          choice1_mean_rt: rows.length ? mean(rows.map(r => Number(r.rt))) : null
+        });
+      }
+
+      const trialColumns = [
+        "subject_id",
+        "event",
+        "rt",
+        "trial_number",
+        "duration",
+        "family",
+        "family_label",
+        "step",
+        "condition_label",
+        "correct_position",
+        "correct_position_name",
+        "dot_counts",
+        "choice_index",
+        "choice_position_name",
+        "elapsed_ms_from_trial_start",
+        "correct"
+      ];
+
+      const summaryColumns = [
+        "subject_id",
+        "duration",
+        "family",
+        "family_label",
+        "step",
+        "reps",
+        "choice1_accuracy",
+        "choice1_mean_rt"
+      ];
+
+      const trialCSV = rowsToCSV(cleaned, trialColumns);
+      const summaryCSV = rowsToCSV(summary, summaryColumns);
+
+      const safeSubjectID = (experimentState.subjectID || "unknown").replace(/[^\w-]/g, "");
+      downloadCSV(`v3_${safeSubjectID}_calibration_trials.csv`, trialCSV);
+      downloadCSV(`v3_${safeSubjectID}_calibration_summary.csv`, summaryCSV);
+    }
+  });
+
+  /**********************
+   * 10. TIMELINE
+   **********************/
+  const timeline = [];
+
+  const subjectIDScreen = {
+    type: jsPsychHtmlKeyboardResponse,
+    stimulus: `
+      <div class="subject-wrap">
+        <h2>Participant ID</h2>
+        <p>Please enter the participant ID before starting.</p>
+        <input id="subject-id-input" class="subject-input" type="text" autocomplete="off" />
+        <br>
+        <button id="subject-id-btn" class="subject-btn">Continue</button>
+        <div id="subject-id-error" class="error-text"></div>
+      </div>
+    `,
+    choices: "NO_KEYS",
+    on_load: function() {
+      const input = document.getElementById("subject-id-input");
+      const btn = document.getElementById("subject-id-btn");
+      const error = document.getElementById("subject-id-error");
+      input.focus();
+
+      function submitID() {
+        const value = input.value.trim();
+        if (!value) {
+          error.textContent = "Please enter a participant ID.";
+          return;
+        }
+        experimentState.subjectID = value;
+        jsPsych.finishTrial({
+          event: "subject_id_entry",
+          subject_id: value
+        });
+      }
+
+      btn.addEventListener("click", submitID);
+      input.addEventListener("keydown", function(e) {
+        if (e.key === "Enter") submitID();
+      });
+    }
+  };
+  timeline.push(subjectIDScreen);
+
+  timeline.push({
+    type: jsPsychInstructions,
+    pages: [
+      `
+      <div style="max-width:900px; margin:auto; text-align:left; font-size:22px; line-height:1.6;">
+        <h2>Calibration experiment</h2>
+        <p>You will briefly see <strong>5 circles</strong> containing dots.</p>
+        <p>Your task is to decide which circle has the most dots.</p>
+      </div>
+      `,
+      `
+      <div style="max-width:900px; margin:auto; text-align:left; font-size:22px; line-height:1.6;">
+        <h2>Important</h2>
+        <p>After the dots disappear, the circles will remain on the screen.</p>
+        <p>You should choose which circle <strong>had</strong> the most dots.</p>
+      </div>
+      `,
+      `
+      <div style="max-width:900px; margin:auto; text-align:left; font-size:22px; line-height:1.6;">
+        <h2>Response</h2>
+        <p>Please make only your <strong>first choice</strong>.</p>
+        <p>After you click once, the experiment will move directly to the next trial.</p>
+      </div>
+      `,
+      `
+      <div style="max-width:900px; margin:auto; text-align:left; font-size:22px; line-height:1.6;">
+        <h2>Total trials</h2>
+        <p>There are <strong>${allTrials.length} trials</strong> in total.</p>
+        <p>You will get short break screens during the experiment.</p>
+      </div>
+      `
+    ],
+    show_clickable_nav: true
+  });
+
+  timeline.push({
+    type: jsPsychHtmlKeyboardResponse,
+    stimulus: `
+      <div style="max-width:900px; margin:auto; text-align:center; font-size:28px; line-height:1.7;">
+        <h2>Start</h2>
+        <p>Press any key to begin.</p>
+      </div>
+    `
+  });
+
+  /**********************
+   * 11. TRIAL PIECES
+   **********************/
+  function makeTrialTimeline(trialConfig) {
+    const initTrial = {
+      type: jsPsychCallFunction,
+      func: function() {
+        initializeTrialState(trialConfig);
+      },
+      data: {
+        event: "initialize_trial",
+        trial_number: trialConfig.trialIndex,
+        duration: trialConfig.duration,
+        family: trialConfig.family,
+        family_label: trialConfig.family_label,
+        step: trialConfig.step,
+        condition_label: trialConfig.condition_label,
+        correct_position: trialConfig.correctPosition
+      }
+    };
+
+    const fixation = {
+      type: jsPsychHtmlKeyboardResponse,
+      stimulus: `<div class="fixation">+</div>`,
+      choices: "NO_KEYS",
+      trial_duration: CONFIG.fixationDuration,
+      data: {
+        event: "fixation",
+        trial_number: trialConfig.trialIndex,
+        duration: trialConfig.duration,
+        family: trialConfig.family,
+        family_label: trialConfig.family_label,
+        step: trialConfig.step,
+        condition_label: trialConfig.condition_label,
+        correct_position: trialConfig.correctPosition
+      }
+    };
+
+    const stimulus = {
+      type: jsPsychHtmlKeyboardResponse,
+      stimulus: renderStimulusDisplay(trialConfig),
+      choices: "NO_KEYS",
+      trial_duration: trialConfig.duration,
+      data: {
+        event: "stimulus",
+        trial_number: trialConfig.trialIndex,
+        duration: trialConfig.duration,
+        family: trialConfig.family,
+        family_label: trialConfig.family_label,
+        step: trialConfig.step,
+        condition_label: trialConfig.condition_label,
+        correct_position: trialConfig.correctPosition,
+        dot_counts: JSON.stringify(trialConfig.options.map(x => x.nDots))
+      }
+    };
+
+    const choice = {
+      type: jsPsychHtmlKeyboardResponse,
+      stimulus: function() {
+        return renderChoiceDisplay();
+      },
+      choices: "NO_KEYS",
+      on_load: function() {
+        trialState.choiceScreenStartTime = performance.now();
+
+        const clickable = document.querySelectorAll(".choice-option");
+        clickable.forEach(btn => {
+          btn.addEventListener("click", function() {
+            const selectedIndex = parseInt(this.dataset.index, 10);
+            const rt = Math.round(performance.now() - trialState.choiceScreenStartTime);
+            const elapsedMs = Math.round(performance.now() - trialState.trialStartTime);
+            const correct = selectedIndex === trialState.currentTrial.correctPosition;
+
+            jsPsych.finishTrial({
+              event: "choice",
+              trial_number: trialState.currentTrial.trialIndex,
+              duration: trialState.currentTrial.duration,
+              family: trialState.currentTrial.family,
+              family_label: trialState.currentTrial.family_label,
+              step: trialState.currentTrial.step,
+              condition_label: trialState.currentTrial.condition_label,
+              correct_position: trialState.currentTrial.correctPosition,
+              choice_index: selectedIndex,
+              rt: rt,
+              elapsed_ms_from_trial_start: elapsedMs,
+              correct: correct
+            });
+          });
+        });
+      }
+    };
+
+    const iti = {
+      type: jsPsychHtmlKeyboardResponse,
+      stimulus: "",
+      choices: "NO_KEYS",
+      trial_duration: CONFIG.interTrialInterval,
+      data: {
+        event: "iti",
+        trial_number: trialConfig.trialIndex,
+        duration: trialConfig.duration,
+        family: trialConfig.family,
+        family_label: trialConfig.family_label,
+        step: trialConfig.step,
+        condition_label: trialConfig.condition_label,
+        correct_position: trialConfig.correctPosition
+      }
+    };
+
+    return {
+      timeline: [initTrial, fixation, stimulus, choice, iti]
+    };
+  }
+
+  /**********************
+   * 12. FULL TIMELINE
+   **********************/
+  allTrials.forEach((trialConfig, idx) => {
+    if (idx > 0 && idx % CONFIG.breakEvery === 0) {
+      timeline.push({
+        type: jsPsychHtmlKeyboardResponse,
+        stimulus: `
+          <div style="max-width:900px; margin:auto; text-align:center; font-size:28px; line-height:1.7;">
+            <h2>Break</h2>
+            <p>You have completed ${idx} trials.</p>
+            <p>Press any key to continue.</p>
+          </div>
+        `
+      });
+    }
+    timeline.push(makeTrialTimeline(trialConfig));
+  });
+
+  timeline.push({
+    type: jsPsychHtmlKeyboardResponse,
+    stimulus: `
+      <div style="max-width:900px; margin:auto; text-align:center; font-size:28px; line-height:1.7;">
+        <h2>Finished</h2>
+        <p>Your data files will download automatically.</p>
+        <p>Thank you.</p>
+        <p>Press any key to end.</p>
+      </div>
+    `
+  });
+
+  /**********************
+   * 13. RUN
+   **********************/
+  jsPsych.run(timeline);
+</script>
+</body>
+</html>
