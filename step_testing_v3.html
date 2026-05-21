@@ -117,7 +117,7 @@
 
     fixationDuration: 700,
     interTrialInterval: 500,
-    breakEvery: 72,
+    breakEvery: 64,
 
     nOptions: 5,
     svgSize: 120,
@@ -713,7 +713,8 @@
         stimulus: `
           <div style="max-width:900px; margin:auto; text-align:center; font-size:28px; line-height:1.7;">
             <h2>Break</h2>
-            <p>You have completed ${idx} trials.</p>
+            <p>You have completed half of the experiment.</p>
+            <p>You have finished ${idx} trials so far.</p>
             <p>Press any key to continue.</p>
           </div>
         `
