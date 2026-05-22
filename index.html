@@ -8,9 +8,11 @@
   <script src="https://unpkg.com/jspsych@8.2.3"></script>
   <link href="https://unpkg.com/jspsych@8.2.3/css/jspsych.css" rel="stylesheet" type="text/css" />
 
-  <script src="https://unpkg.com/@jspsych/plugin-instructions@2.1.0"></script>
-  <script src="https://unpkg.com/@jspsych/plugin-html-keyboard-response@2.1.0"></script>
-  <script src="https://unpkg.com/@jspsych/plugin-call-function@2.1.0"></script>
+  <script src="https://unpkg.com/@jspsych/plugin-instructions@2.0.0"></script>
+  <script src="https://unpkg.com/@jspsych/plugin-html-keyboard-response@2.0.0"></script>
+  <script src="https://unpkg.com/@jspsych/plugin-call-function@2.0.0"></script>
+  <script src="https://unpkg.com/@jspsych/plugin-fullscreen@2.0.0"></script>
+  <script src="https://unpkg.com/@jspsych/plugin-virtual-chinrest@2.0.0"></script>
 
   <style>
     body {
@@ -18,7 +20,6 @@
     }
 
     .task-wrap {
-      width: 950px;
       margin: 0 auto;
       text-align: center;
     }
@@ -27,29 +28,32 @@
       font-size: 28px;
       margin-bottom: 12px;
       font-weight: 600;
+      min-height: 34px;
     }
 
     .question-subtitle {
       font-size: 18px;
       margin-bottom: 20px;
       color: #444;
+      min-height: 22px;
     }
 
     .pentagon-area {
-      width: 900px;
-      height: 620px;
       margin: 0 auto;
       position: relative;
     }
 
     .option-btn {
       position: absolute;
-      width: 150px;
-      height: 150px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
       border: none;
       background: transparent;
       padding: 0;
+      line-height: 0;
       cursor: pointer;
+      transform: translate(-50%, -50%);
     }
 
     .option-btn.hidden {
@@ -59,13 +63,9 @@
 
     .option-btn svg {
       overflow: visible;
+      display: block;
+      margin: 0;
     }
-
-    .pos-0 { left: 375px; top: 10px; }
-    .pos-1 { left: 120px; top: 170px; }
-    .pos-2 { left: 630px; top: 170px; }
-    .pos-3 { left: 220px; top: 400px; }
-    .pos-4 { left: 530px; top: 400px; }
 
     .confidence-wrap {
       width: 800px;
@@ -117,6 +117,27 @@
       margin-top: 12px;
     }
 
+    .feedback-wrap {
+      width: 800px;
+      margin: 140px auto 0 auto;
+      text-align: center;
+    }
+
+    .feedback-title {
+      font-size: 44px;
+      font-weight: 700;
+      color: #178f3c;
+      line-height: 1.1;
+    }
+
+    .feedback-points {
+      margin-top: 10px;
+      font-size: 30px;
+      font-weight: 600;
+      color: #178f3c;
+      line-height: 1.1;
+    }
+
     .fixation {
       font-size: 64px;
       font-weight: 600;
@@ -161,12 +182,66 @@
    **********************/
   const CONFIG = {
     nOptions: 5,
-    stimulusDurations: [500, 750, 1500, 3000],
+    stimulusDurations: [500, 1500],
     fixationDuration: 700,
     interTrialInterval: 500,
+    correctFeedbackDuration: 900,
     stimulusRadius: 52,
     svgSize: 120,
-    nPracticeTrials: 4
+    maxDotCount: 100,
+    practiceBlock1Duration: 1500,
+    practiceBlock2Durations: [500, 1500],
+    practiceBlock1Trials: 12,
+    practiceBlock2Trials: 12,
+    practiceBlock3RepeatsPerCondition: 2,
+    practiceEasyStep: 12,
+    mainRepeatsPerCondition: 60,
+    mainTrialsPerBlock: 40
+  };
+
+  const DOT_COUNT_CONDITION_PATTERNS = [
+    {
+      id: "cond_1",
+      label: "all_different",
+      tierPattern: [0, 1, 2, 3, 4]
+    },
+    {
+      id: "cond_2",
+      label: "two_pairs_same",
+      tierPattern: [0, 1, 1, 2, 2]
+    },
+    {
+      id: "cond_3",
+      label: "three_same",
+      tierPattern: [0, 1, 1, 1, 2]
+    },
+    {
+      id: "cond_4",
+      label: "four_same",
+      tierPattern: [0, 1, 1, 1, 1]
+    }
+  ];
+
+  const MAIN_CONDITION_STEPS_BY_DURATION = {
+    500: {
+      cond_1: 4,
+      cond_2: 6,
+      cond_3: 7,
+      cond_4: 8
+    },
+    1500: {
+      cond_1: 3,
+      cond_2: 4,
+      cond_3: 6,
+      cond_4: 7
+    }
+  };
+
+  const PRACTICE_EASY_CONDITION = {
+    id: "easy",
+    label: "all_different",
+    step: CONFIG.practiceEasyStep,
+    tierPattern: [0, 1, 2, 3, 4]
   };
 
   /*************************
@@ -213,6 +288,98 @@
     return map[index];
   }
 
+  function degToPx(deg, pxPerMm, viewingDistanceMm) {
+    const mm = 2 * viewingDistanceMm * Math.tan((deg * Math.PI / 180) / 2);
+    return mm * pxPerMm;
+  }
+
+  function pxToDeg(px, pxPerMm, viewingDistanceMm) {
+    const mm = px / pxPerMm;
+    return 2 * Math.atan((mm / 2) / viewingDistanceMm) * 180 / Math.PI;
+  }
+
+  function clamp(value, min, max) {
+    return Math.max(min, Math.min(max, value));
+  }
+
+  /*************************************
+   * 3. CALIBRATION / DISPLAY SCALING  *
+   *************************************/
+  const BASELINE_RENDER = {
+    pxPerMm: 96 / 25.4,
+    viewingDistanceMm: 600,
+    areaWidthPx: 900,
+    areaHeightPx: 620,
+    buttonSizePx: 150,
+    displayedSvgSizePx: 120,
+    centersPx: [
+      { x: 435, y: 70 },
+      { x: 180, y: 230 },
+      { x: 690, y: 230 },
+      { x: 280, y: 460 },
+      { x: 590, y: 460 }
+    ]
+  };
+
+  const calibrationState = {
+    pixelsPerMm: BASELINE_RENDER.pxPerMm,
+    viewingDistanceMm: BASELINE_RENDER.viewingDistanceMm,
+    calibrated: false
+  };
+
+  const TARGET_VISUAL_ANGLES = {
+    areaWidthDeg: pxToDeg(BASELINE_RENDER.areaWidthPx, BASELINE_RENDER.pxPerMm, BASELINE_RENDER.viewingDistanceMm),
+    areaHeightDeg: pxToDeg(BASELINE_RENDER.areaHeightPx, BASELINE_RENDER.pxPerMm, BASELINE_RENDER.viewingDistanceMm),
+    buttonSizeDeg: pxToDeg(BASELINE_RENDER.buttonSizePx, BASELINE_RENDER.pxPerMm, BASELINE_RENDER.viewingDistanceMm),
+    displayedSvgSizeDeg: pxToDeg(BASELINE_RENDER.displayedSvgSizePx, BASELINE_RENDER.pxPerMm, BASELINE_RENDER.viewingDistanceMm),
+    centersDeg: BASELINE_RENDER.centersPx.map(c => ({
+      x: pxToDeg(c.x, BASELINE_RENDER.pxPerMm, BASELINE_RENDER.viewingDistanceMm),
+      y: pxToDeg(c.y, BASELINE_RENDER.pxPerMm, BASELINE_RENDER.viewingDistanceMm)
+    }))
+  };
+
+  let DISPLAY = {
+    areaWidthPx: BASELINE_RENDER.areaWidthPx,
+    areaHeightPx: BASELINE_RENDER.areaHeightPx,
+    buttonSizePx: BASELINE_RENDER.buttonSizePx,
+    displayedSvgSizePx: BASELINE_RENDER.displayedSvgSizePx,
+    centersPx: BASELINE_RENDER.centersPx
+  };
+
+  function updateDisplayMetrics() {
+    let ppm = calibrationState.pixelsPerMm;
+    let vdm = calibrationState.viewingDistanceMm;
+
+    if (!Number.isFinite(ppm) || ppm <= 0) ppm = BASELINE_RENDER.pxPerMm;
+    if (!Number.isFinite(vdm) || vdm <= 0) vdm = BASELINE_RENDER.viewingDistanceMm;
+
+    DISPLAY = {
+      areaWidthPx: clamp(degToPx(TARGET_VISUAL_ANGLES.areaWidthDeg, ppm, vdm), 700, 1500),
+      areaHeightPx: clamp(degToPx(TARGET_VISUAL_ANGLES.areaHeightDeg, ppm, vdm), 500, 1100),
+      buttonSizePx: clamp(degToPx(TARGET_VISUAL_ANGLES.buttonSizeDeg, ppm, vdm), 110, 260),
+      displayedSvgSizePx: clamp(degToPx(TARGET_VISUAL_ANGLES.displayedSvgSizeDeg, ppm, vdm), 90, 220),
+      centersPx: TARGET_VISUAL_ANGLES.centersDeg.map(c => ({
+        x: degToPx(c.x, ppm, vdm),
+        y: degToPx(c.y, ppm, vdm)
+      }))
+    };
+  }
+
+  updateDisplayMetrics();
+
+  function getOptionStyle(index) {
+    const center = DISPLAY.centersPx[index];
+    return `
+      left: ${center.x}px;
+      top: ${center.y}px;
+      width: ${DISPLAY.buttonSizePx}px;
+      height: ${DISPLAY.buttonSizePx}px;
+    `;
+  }
+
+  /**********************************
+   * 4. DOT GENERATION              *
+   **********************************/
   function generateDots(nDots, seed) {
     const rand = mulberry32(seed);
     const points = [];
@@ -245,106 +412,80 @@
     return points;
   }
 
-  function renderOptionSVG(option, showDots = true) {
-    const center = CONFIG.svgSize / 2;
-    const radius = CONFIG.stimulusRadius;
-
-    const outline = `
-      <circle cx="${center}" cy="${center}" r="${radius}"
-        fill="white" stroke="black" stroke-width="3"></circle>
-    `;
-
-    const dots = showDots
-      ? option.points.map(p => {
-          return `<circle cx="${p.x.toFixed(1)}" cy="${p.y.toFixed(1)}" r="2.8" fill="black"></circle>`;
-        }).join("")
-      : "";
-
-    return `
-      <svg width="${CONFIG.svgSize}" height="${CONFIG.svgSize}" viewBox="0 0 ${CONFIG.svgSize} ${CONFIG.svgSize}">
-        ${outline}
-        ${dots}
-      </svg>
-    `;
-  }
-
-  function renderStimulusDisplay(trialConfig) {
-    const optionHTML = trialConfig.options.map((opt, idx) => {
-      return `
-        <div class="option-btn pos-${idx}" style="cursor: default;">
-          ${renderOptionSVG(opt, true)}
-        </div>
-      `;
-    }).join("");
-
-    return `
-      <div class="task-wrap">
-        <div class="question-title">Which circle has the most dots?</div>
-        <div class="question-subtitle">Look carefully.</div>
-        <div class="pentagon-area">
-          ${optionHTML}
-        </div>
-      </div>
-    `;
-  }
-
-  function renderChoiceDisplay() {
-    const trialConfig = trialState.currentTrial;
-    const optionHTML = trialConfig.options.map((opt, idx) => {
-      const hiddenClass = trialState.available[idx] ? "" : "hidden";
-      return `
-        <button class="option-btn pos-${idx} ${hiddenClass} choice-option"
-                data-index="${idx}"
-                aria-label="option ${idx + 1}">
-          ${renderOptionSVG(opt, false)}
-        </button>
-      `;
-    }).join("");
-
-    return `
-      <div class="task-wrap">
-        <div class="question-title">Which circle had the most dots?</div>
-        <div class="question-subtitle">Choice ${trialState.choiceNumber + 1}</div>
-        <div class="pentagon-area">
-          ${optionHTML}
-        </div>
-        <div class="small-note">Click one circle.</div>
-      </div>
-    `;
-  }
-
-  function renderConfidenceDisplay() {
-    return `
-      <div class="confidence-wrap">
-        <div class="confidence-title">How confident are you?</div>
-        <div class="confidence-subtitle">
-          Confidence for choice ${trialState.choiceNumber}
-        </div>
-
-        <div class="confidence-buttons">
-          <button class="conf-btn confidence-btn" data-conf="1">1</button>
-          <button class="conf-btn confidence-btn" data-conf="2">2</button>
-          <button class="conf-btn confidence-btn" data-conf="3">3</button>
-          <button class="conf-btn confidence-btn" data-conf="4">4</button>
-        </div>
-
-        <div class="confidence-anchor-row">
-          <div>Not confident</div>
-          <div>Very confident</div>
-        </div>
-      </div>
-    `;
-  }
-
   /**********************************
-   * 3. BUILD TRIAL CONFIGURATIONS  *
+   * 5. BUILD TRIAL CONFIGURATIONS  *
    **********************************/
-  function makeEqualTrial(trialIndex, duration, practice = false) {
-    const correctPosition = Math.floor(Math.random() * 5);
-    const dotCounts = [50, 50, 50, 50, 50];
-    dotCounts[correctPosition] = 58;
+  function buildDotCounts(conditionSpec) {
+    return conditionSpec.tierPattern.map(level => {
+      return CONFIG.maxDotCount - conditionSpec.step * level;
+    });
+  }
 
-    const options = dotCounts.map((nDots, optionIndex) => {
+  function getMainConditionSpecsForDuration(duration) {
+    const stepsForDuration = MAIN_CONDITION_STEPS_BY_DURATION[duration] ?? {};
+
+    return DOT_COUNT_CONDITION_PATTERNS.map(conditionPattern => ({
+      ...conditionPattern,
+      step: stepsForDuration[conditionPattern.id]
+    })).filter(conditionSpec => Number.isFinite(conditionSpec.step));
+  }
+
+  function buildMainConditionCombos() {
+    const combos = [];
+
+    CONFIG.stimulusDurations.forEach(duration => {
+      getMainConditionSpecsForDuration(duration).forEach(conditionSpec => {
+        combos.push({ duration, conditionSpec });
+      });
+    });
+
+    return combos;
+  }
+
+  function buildRepeatedCombos(baseCombos, repeatsPerCombo) {
+    const combos = [];
+
+    for (let repeatIndex = 0; repeatIndex < repeatsPerCombo; repeatIndex++) {
+      baseCombos.forEach(combo => {
+        combos.push({ ...combo });
+      });
+    }
+
+    return combos;
+  }
+
+  function getPointsForAttempt(attemptNumber) {
+    const pointsByAttempt = [10, 8, 6, 4, 0];
+    return pointsByAttempt[attemptNumber - 1] ?? 0;
+  }
+
+  function renderCorrectFeedback() {
+    return `
+      <div class="feedback-wrap">
+        <div class="feedback-title">CORRECT!</div>
+        <div class="feedback-points">+${trialState.lastPointsAwarded} points</div>
+      </div>
+    `;
+  }
+
+  function buildBalancedDurationList(durations, nTrials) {
+    const durationList = [];
+    for (let i = 0; i < nTrials; i++) {
+      durationList.push(durations[i % durations.length]);
+    }
+    return shuffle(durationList);
+  }
+
+  function makeDotCountTrial(trialIndex, duration, conditionSpec, options = {}) {
+    const {
+      practice = false,
+      conditionNamePrefix = ""
+    } = options;
+
+    const dotCounts = shuffle(buildDotCounts(conditionSpec));
+    const correctPosition = dotCounts.indexOf(CONFIG.maxDotCount);
+
+    const trialOptions = dotCounts.map((nDots, optionIndex) => {
       const points = generateDots(nDots, trialIndex * 100 + optionIndex * 17 + 1);
       return { nDots, points };
     });
@@ -353,71 +494,94 @@
       trialIndex,
       practice,
       duration,
-      condition_name: "equal_58_50_50_50_50",
+      condition_name: conditionNamePrefix
+        ? `${conditionNamePrefix}_${conditionSpec.id}_${conditionSpec.label}`
+        : `${conditionSpec.id}_${conditionSpec.label}`,
       correctPosition,
-      options
+      options: trialOptions
     };
   }
 
-  function makeGradedTrial(trialIndex, duration, practice = false) {
-    const dotList = shuffle([100, 90, 80, 70, 60]);
-    const correctPosition = dotList.indexOf(100);
+  function buildTrialsFromCombos(combos, startIndex, options = {}) {
+    return shuffle(combos).map(({ duration, conditionSpec }, index) => {
+      return makeDotCountTrial(startIndex + index, duration, conditionSpec, options);
+    });
+  }
 
-    const options = dotList.map((nDots, optionIndex) => {
-      const points = generateDots(nDots, trialIndex * 100 + optionIndex * 17 + 1);
-      return { nDots, points };
+  function buildPracticeBlocks(startIndex) {
+    let counter = startIndex;
+
+    const block1Combos = Array.from({ length: CONFIG.practiceBlock1Trials }, () => ({
+      duration: CONFIG.practiceBlock1Duration,
+      conditionSpec: PRACTICE_EASY_CONDITION
+    }));
+    const block1Trials = buildTrialsFromCombos(block1Combos, counter, {
+      practice: true,
+      conditionNamePrefix: "practice_block_1"
+    });
+    counter += block1Trials.length;
+
+    const block2Combos = buildBalancedDurationList(
+      CONFIG.practiceBlock2Durations,
+      CONFIG.practiceBlock2Trials
+    ).map(duration => ({
+      duration,
+      conditionSpec: PRACTICE_EASY_CONDITION
+    }));
+    const block2Trials = buildTrialsFromCombos(block2Combos, counter, {
+      practice: true,
+      conditionNamePrefix: "practice_block_2"
+    });
+    counter += block2Trials.length;
+
+    const block3Combos = buildRepeatedCombos(
+      buildMainConditionCombos(),
+      CONFIG.practiceBlock3RepeatsPerCondition
+    );
+    const block3Trials = buildTrialsFromCombos(block3Combos, counter, {
+      practice: true,
+      conditionNamePrefix: "practice_block_3"
     });
 
-    return {
-      trialIndex,
-      practice,
-      duration,
-      condition_name: "graded",
-      correctPosition,
-      options
-    };
-  }
-
-  function buildPracticeTrials() {
-    const durations = shuffle([...CONFIG.stimulusDurations]);
-    const trials = [];
-    let counter = 1;
-
-    durations.forEach((duration, i) => {
-      const isGraded = i % 2 === 0;
-      if (isGraded) {
-        trials.push(makeGradedTrial(counter++, duration, true));
-      } else {
-        trials.push(makeEqualTrial(counter++, duration, true));
+    return [
+      {
+        title: "Practice 1",
+        description: "",
+        trials: block1Trials
+      },
+      {
+        title: "Practice 2",
+        description: "The trials will now become a bit more difficult.",
+        trials: block2Trials
+      },
+      {
+        title: "Practice 3",
+        description: "The trials will now become more difficult and match the main experiment.",
+        trials: block3Trials
       }
-    });
-
-    return trials;
+    ];
   }
 
   function buildMainTrials(startIndex) {
-    const trials = [];
-    let counter = startIndex;
-
-    CONFIG.stimulusDurations.forEach(duration => {
-      trials.push(makeGradedTrial(counter++, duration, false));
-      trials.push(makeGradedTrial(counter++, duration, false));
-      trials.push(makeEqualTrial(counter++, duration, false));
-      trials.push(makeEqualTrial(counter++, duration, false));
-    });
-
-    return trials;
+    const mainCombos = buildRepeatedCombos(
+      buildMainConditionCombos(),
+      CONFIG.mainRepeatsPerCondition
+    );
+    return buildTrialsFromCombos(mainCombos, startIndex);
   }
 
-  const practiceTrials = buildPracticeTrials();
+  const practiceBlocks = buildPracticeBlocks(1);
+  const practiceTrials = practiceBlocks.reduce((allTrials, block) => {
+    return allTrials.concat(block.trials);
+  }, []);
   const mainTrials = buildMainTrials(practiceTrials.length + 1);
-  const allTrials = [...practiceTrials, ...mainTrials];
 
   /****************************
-   * 4. GLOBAL STATE STORAGE *
+   * 6. GLOBAL STATE STORAGE *
    ****************************/
   const experimentState = {
-    subjectID: ""
+    subjectID: "",
+    totalPoints: 0
   };
 
   const trialState = {
@@ -429,7 +593,8 @@
     confidenceScreenStartTime: null,
     lastChoice: null,
     lastChoiceCorrect: null,
-    lastChoiceRT: null
+    lastChoiceRT: null,
+    lastPointsAwarded: 0
   };
 
   function initializeTrialState(trialConfig) {
@@ -442,10 +607,11 @@
     trialState.lastChoice = null;
     trialState.lastChoiceCorrect = null;
     trialState.lastChoiceRT = null;
+    trialState.lastPointsAwarded = 0;
   }
 
   /***********************
-   * 5. JSPSYCH SETUP    *
+   * 7. JSPSYCH SETUP    *
    ***********************/
   const jsPsych = initJsPsych({
     on_finish: function() {
@@ -453,6 +619,9 @@
 
       const cleaned = raw.map(row => ({
         subject_id: experimentState.subjectID || null,
+        pixels_per_mm: row.pixels_per_mm ?? null,
+        mm_per_px: row.mm_per_px ?? null,
+        viewing_distance_mm: row.viewing_distance_mm ?? null,
         event: row.event ?? null,
         rt: row.rt ?? null,
         trial_index: row.trial_index ?? null,
@@ -474,6 +643,8 @@
         elapsed_ms_from_trial_start: row.elapsed_ms_from_trial_start ?? null,
         correct: row.correct ?? null,
         remaining_options_before_choice: row.remaining_options_before_choice ?? null,
+        points_awarded: row.points_awarded ?? null,
+        total_points: row.total_points ?? null,
         confidence_choice_correct: row.choice_correct ?? null,
         confidence_choice_rt: row.choice_rt ?? null,
         confidence: row.confidence ?? null
@@ -481,6 +652,9 @@
 
       const columns = [
         "subject_id",
+        "pixels_per_mm",
+        "mm_per_px",
+        "viewing_distance_mm",
         "event",
         "rt",
         "trial_index",
@@ -496,6 +670,8 @@
         "elapsed_ms_from_trial_start",
         "correct",
         "remaining_options_before_choice",
+        "points_awarded",
+        "total_points",
         "confidence_choice_correct",
         "confidence_choice_rt",
         "confidence"
@@ -524,7 +700,7 @@
   const timeline = [];
 
   /*************************
-   * 6. SUBJECT ID SCREEN  *
+   * 8. SUBJECT ID SCREEN  *
    *************************/
   const subjectIDScreen = {
     type: jsPsychHtmlKeyboardResponse,
@@ -569,8 +745,85 @@
   };
   timeline.push(subjectIDScreen);
 
+  /************************************
+   * 9. SCREEN / VIEWING CALIBRATION  *
+   ************************************/
+  const calibrationIntro = {
+    type: jsPsychInstructions,
+    pages: [
+      `
+      <div style="max-width:900px; margin:auto; text-align:left; font-size:22px; line-height:1.6;">
+        <h2>Screen calibration</h2>
+        <p>Next, you will complete a short calibration so the circles appear at approximately the same retinal size for different participants.</p>
+      </div>
+      `,
+      `
+      <div style="max-width:900px; margin:auto; text-align:left; font-size:22px; line-height:1.6;">
+        <h2>What you need</h2>
+        <p>Please have a real credit card or bank card ready.</p>
+        <p>You will first match an on-screen rectangle to the size of your card.</p>
+      </div>
+      `,
+      `
+      <div style="max-width:900px; margin:auto; text-align:left; font-size:22px; line-height:1.6;">
+        <h2>Moving dot / blind spot step</h2>
+        <p>After that, you will complete a short blind-spot based distance estimate.</p>
+        <p>Please sit normally, keep your head still, and follow the on-screen instructions carefully.</p>
+      </div>
+      `
+    ],
+    show_clickable_nav: true
+  };
+  timeline.push(calibrationIntro);
+
+  const enter_fullscreen = {
+    type: jsPsychFullscreen,
+    fullscreen_mode: true
+  };
+  timeline.push(enter_fullscreen);
+
+  const chinrest = {
+    type: jsPsychVirtualChinrest,
+    blindspot_reps: 3,
+    resize_units: "none",
+    item_path: "card.png",
+    viewing_distance_report: "none",
+    on_finish: function(data) {
+      const pixelsPerMm =
+        Number.isFinite(data.px2mm) && data.px2mm > 0
+          ? data.px2mm
+          : BASELINE_RENDER.pxPerMm;
+
+      calibrationState.pixelsPerMm = pixelsPerMm;
+      calibrationState.viewingDistanceMm = data.view_dist_mm;
+      calibrationState.calibrated = true;
+      updateDisplayMetrics();
+
+      jsPsych.data.addProperties({
+        pixels_per_mm: pixelsPerMm,
+        mm_per_px:
+          Number.isFinite(pixelsPerMm) && pixelsPerMm > 0
+            ? 1 / pixelsPerMm
+            : null,
+        viewing_distance_mm: data.view_dist_mm
+      });
+    }
+  };
+  timeline.push(chinrest);
+
+  timeline.push({
+    type: jsPsychHtmlKeyboardResponse,
+    stimulus: `
+      <div style="max-width:900px; margin:auto; text-align:center; font-size:24px; line-height:1.7;">
+        <h2>Calibration complete</h2>
+        <p>Screen scaling has been set for this participant.</p>
+        <p>Press any key to continue to the task instructions.</p>
+      </div>
+    `
+  });
+
   /***********************
-   * 7. INSTRUCTIONS     *
+   * 10. INSTRUCTIONS    *
    ***********************/
   const instructions = {
     type: jsPsychInstructions,
@@ -602,8 +855,99 @@
   };
   timeline.push(instructions);
 
+  /**********************************
+   * 11. DISPLAY RENDER FUNCTIONS   *
+   **********************************/
+  function renderTaskDisplayFrame(optionHTML, titleText, subtitleText) {
+    return `
+      <div class="task-wrap" style="width:${DISPLAY.areaWidthPx}px;">
+        <div class="question-title">${titleText}</div>
+        <div class="question-subtitle">${subtitleText}</div>
+        <div class="pentagon-area" style="width:${DISPLAY.areaWidthPx}px; height:${DISPLAY.areaHeightPx}px;">
+          ${optionHTML}
+        </div>
+      </div>
+    `;
+  }
+
+  function renderStimulusDisplay(trialConfig) {
+    const optionHTML = trialConfig.options.map((opt, idx) => {
+      return `
+        <div class="option-btn" style="${getOptionStyle(idx)} cursor: default;">
+          ${renderOptionSVG(opt, true)}
+        </div>
+      `;
+    }).join("");
+
+    return renderTaskDisplayFrame(optionHTML, "Which circle has the most dots?", "Look carefully.");
+  }
+
+  function renderChoiceDisplay() {
+    const trialConfig = trialState.currentTrial;
+    const optionHTML = trialConfig.options.map((opt, idx) => {
+      const hiddenClass = trialState.available[idx] ? "" : "hidden";
+      return `
+        <div class="option-btn choice-option ${hiddenClass}" style="${getOptionStyle(idx)}"
+             data-index="${idx}"
+             role="button"
+             tabindex="0"
+             aria-label="option ${idx + 1}">
+          ${renderOptionSVG(opt, false)}
+        </div>
+      `;
+    }).join("");
+
+    return renderTaskDisplayFrame(optionHTML, "Which circle has the most dots?", "Look carefully.");
+  }
+
+  function renderConfidenceDisplay() {
+    return `
+      <div class="confidence-wrap">
+        <div class="confidence-title">How confident are you?</div>
+        <div class="confidence-subtitle">
+          Confidence for choice ${trialState.choiceNumber}
+        </div>
+
+        <div class="confidence-buttons">
+          <button class="conf-btn confidence-btn" data-conf="1">1</button>
+          <button class="conf-btn confidence-btn" data-conf="2">2</button>
+          <button class="conf-btn confidence-btn" data-conf="3">3</button>
+          <button class="conf-btn confidence-btn" data-conf="4">4</button>
+        </div>
+
+        <div class="confidence-anchor-row">
+          <div>Not confident</div>
+          <div>Very confident</div>
+        </div>
+      </div>
+    `;
+  }
+
+  function renderOptionSVG(option, showDots = true) {
+    const center = CONFIG.svgSize / 2;
+    const radius = CONFIG.stimulusRadius;
+
+    const outline = `
+      <circle cx="${center}" cy="${center}" r="${radius}"
+        fill="white" stroke="black" stroke-width="3"></circle>
+    `;
+
+    const dots = showDots
+      ? option.points.map(p => {
+          return `<circle cx="${p.x.toFixed(1)}" cy="${p.y.toFixed(1)}" r="2.8" fill="black"></circle>`;
+        }).join("")
+      : "";
+
+    return `
+      <svg width="${DISPLAY.displayedSvgSizePx}" height="${DISPLAY.displayedSvgSizePx}" viewBox="0 0 ${CONFIG.svgSize} ${CONFIG.svgSize}">
+        ${outline}
+        ${dots}
+      </svg>
+    `;
+  }
+
   /**************************
-   * 8. GENERIC TRIAL PIECES
+   * 12. GENERIC TRIAL PIECES
    **************************/
   function makeTrialTimeline(trialConfig) {
     const initTrial = {
@@ -638,7 +982,9 @@
 
     const stimulus = {
       type: jsPsychHtmlKeyboardResponse,
-      stimulus: renderStimulusDisplay(trialConfig),
+      stimulus: function() {
+        return renderStimulusDisplay(trialConfig);
+      },
       choices: "NO_KEYS",
       trial_duration: trialConfig.duration,
       data: {
@@ -691,6 +1037,9 @@
         trialState.lastChoice = data.choice_index;
         trialState.lastChoiceCorrect = data.correct;
         trialState.lastChoiceRT = data.rt;
+        trialState.lastPointsAwarded = data.correct
+          ? getPointsForAttempt(data.choice_number)
+          : 0;
 
         if (!data.correct) {
           trialState.available[data.choice_index] = false;
@@ -741,9 +1090,16 @@
 
     const iti = {
       type: jsPsychHtmlKeyboardResponse,
-      stimulus: "",
+      stimulus: function() {
+        return renderCorrectFeedback();
+      },
       choices: "NO_KEYS",
-      trial_duration: CONFIG.interTrialInterval,
+      trial_duration: CONFIG.correctFeedbackDuration,
+      on_start: function(trial) {
+        experimentState.totalPoints += trialState.lastPointsAwarded;
+        trial.data.points_awarded = trialState.lastPointsAwarded;
+        trial.data.total_points = experimentState.totalPoints;
+      },
       data: {
         event: "iti",
         trial_index: trialConfig.trialIndex,
@@ -760,22 +1116,24 @@
   }
 
   /***********************
-   * 9. BUILD TIMELINE   *
+   * 13. BUILD TIMELINE  *
    ***********************/
-  timeline.push({
-    type: jsPsychHtmlKeyboardResponse,
-    stimulus: `
-      <div style="max-width:900px; margin:auto; text-align:center; font-size:26px; line-height:1.7;">
-        <h2>Practice</h2>
-        <p>You will first complete 4 practice trials.</p>
-        <p>The 4 stimulus durations will appear in random order.</p>
-        <p>Press any key to begin practice.</p>
-      </div>
-    `
-  });
+  practiceBlocks.forEach(block => {
+    timeline.push({
+      type: jsPsychHtmlKeyboardResponse,
+      stimulus: `
+        <div style="max-width:900px; margin:auto; text-align:center; font-size:26px; line-height:1.7;">
+          <h2>${block.title}</h2>
+          ${block.description ? `<p>${block.description}</p>` : ""}
+          <p>You will complete ${block.trials.length} practice trials in this block.</p>
+          <p>Press any key to begin.</p>
+        </div>
+      `
+    });
 
-  practiceTrials.forEach(trialConfig => {
-    timeline.push(makeTrialTimeline(trialConfig));
+    block.trials.forEach(trialConfig => {
+      timeline.push(makeTrialTimeline(trialConfig));
+    });
   });
 
   timeline.push({
@@ -784,13 +1142,14 @@
       <div style="max-width:900px; margin:auto; text-align:center; font-size:26px; line-height:1.7;">
         <h2>Main experiment</h2>
         <p>Practice is finished.</p>
+        <p>You will now complete ${mainTrials.length} main trials.</p>
         <p>Press any key to begin the main experiment.</p>
       </div>
     `
   });
 
   mainTrials.forEach((trialConfig, idx) => {
-    if (idx === 4 || idx === 8 || idx === 12) {
+    if (idx > 0 && idx % CONFIG.mainTrialsPerBlock === 0) {
       timeline.push({
         type: jsPsychHtmlKeyboardResponse,
         stimulus: `
@@ -818,7 +1177,7 @@
   });
 
   /***********************
-   * 10. RUN EXPERIMENT  *
+   * 14. RUN EXPERIMENT  *
    ***********************/
   jsPsych.run(timeline);
 </script>
