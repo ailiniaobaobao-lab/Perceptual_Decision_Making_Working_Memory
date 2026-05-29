@@ -460,10 +460,14 @@
   }
 
   function renderCorrectFeedback() {
+    const pointsLine = trialState.currentTrial?.practice
+      ? ""
+      : `<div class="feedback-points">+${trialState.lastPointsAwarded} points</div>`;
+
     return `
       <div class="feedback-wrap">
         <div class="feedback-title">CORRECT!</div>
-        <div class="feedback-points">+${trialState.lastPointsAwarded} points</div>
+        ${pointsLine}
       </div>
     `;
   }
@@ -753,8 +757,9 @@
     pages: [
       `
       <div style="max-width:900px; margin:auto; text-align:left; font-size:22px; line-height:1.6;">
-        <h2>Screen calibration</h2>
-        <p>Next, you will complete a short calibration so the circles appear at approximately the same retinal size for different participants.</p>
+        <h2>Screen setup</h2>
+        <p>Before the task begins, you will complete a short screen setup.</p>
+        <p>This helps keep the circle size more consistent across participants.</p>
       </div>
       `,
       `
@@ -766,8 +771,8 @@
       `,
       `
       <div style="max-width:900px; margin:auto; text-align:left; font-size:22px; line-height:1.6;">
-        <h2>Moving dot / blind spot step</h2>
-        <p>After that, you will complete a short blind-spot based distance estimate.</p>
+        <h2>Viewing distance</h2>
+        <p>Next, you will complete a short blind-spot step to estimate viewing distance.</p>
         <p>Please sit normally, keep your head still, and follow the on-screen instructions carefully.</p>
       </div>
       `
@@ -815,9 +820,9 @@
     type: jsPsychHtmlKeyboardResponse,
     stimulus: `
       <div style="max-width:900px; margin:auto; text-align:center; font-size:24px; line-height:1.7;">
-        <h2>Calibration complete</h2>
-        <p>Screen scaling has been set for this participant.</p>
-        <p>Press any key to continue to the task instructions.</p>
+        <h2>Screen setup complete</h2>
+        <p>The task is ready to begin.</p>
+        <p>Press any key to continue.</p>
       </div>
     `
   });
@@ -830,24 +835,33 @@
     pages: [
       `
       <div style="max-width:900px; margin:auto; text-align:left; font-size:22px; line-height:1.6;">
-        <h2>Welcome</h2>
+        <h2>Task</h2>
         <p>On each trial, you will briefly see <strong>5 circles</strong>.</p>
-        <p>Your task is to decide <strong>which circle has the most dots</strong>.</p>
+        <p>Your task is to decide <strong>which circle had the most dots</strong>.</p>
       </div>
       `,
       `
       <div style="max-width:900px; margin:auto; text-align:left; font-size:22px; line-height:1.6;">
-        <h2>Important</h2>
-        <p>After the dots disappear, the circles will stay on the screen.</p>
-        <p>You should choose which circle <strong>had</strong> the most dots.</p>
+        <h2>Responding</h2>
+        <p>After the dots disappear, the empty circles will remain on the screen.</p>
+        <p>Select the circle that had the most dots.</p>
+        <p>If your choice is incorrect, that option will disappear and you will choose again.</p>
       </div>
       `,
       `
       <div style="max-width:900px; margin:auto; text-align:left; font-size:22px; line-height:1.6;">
-        <h2>Response</h2>
-        <p>Click one circle.</p>
-        <p>Then report your confidence from <strong>1 to 4</strong>.</p>
-        <p>If your choice is wrong, that circle will disappear and you will choose again.</p>
+        <h2>Confidence</h2>
+        <p>After each choice, rate how confident you are from <strong>1 to 4</strong>.</p>
+        <p><strong>1</strong> = not confident</p>
+        <p><strong>4</strong> = very confident</p>
+      </div>
+      `,
+      `
+      <div style="max-width:900px; margin:auto; text-align:left; font-size:22px; line-height:1.6;">
+        <h2>Points and bonus</h2>
+        <p>In the main task, earlier correct answers earn more points.</p>
+        <p>The first correct choice earns the most points, and later correct choices earn fewer points.</p>
+        <p>Your bonus payment will depend on your total score.</p>
       </div>
       `
     ],
@@ -1096,8 +1110,9 @@
       choices: "NO_KEYS",
       trial_duration: CONFIG.correctFeedbackDuration,
       on_start: function(trial) {
-        experimentState.totalPoints += trialState.lastPointsAwarded;
-        trial.data.points_awarded = trialState.lastPointsAwarded;
+        const pointsAwarded = trialConfig.practice ? 0 : trialState.lastPointsAwarded;
+        experimentState.totalPoints += pointsAwarded;
+        trial.data.points_awarded = pointsAwarded;
         trial.data.total_points = experimentState.totalPoints;
       },
       data: {
@@ -1126,7 +1141,7 @@
           <h2>${block.title}</h2>
           ${block.description ? `<p>${block.description}</p>` : ""}
           <p>You will complete ${block.trials.length} practice trials in this block.</p>
-          <p>Press any key to begin.</p>
+          <p>Press any key to start.</p>
         </div>
       `
     });
@@ -1140,10 +1155,12 @@
     type: jsPsychHtmlKeyboardResponse,
     stimulus: `
       <div style="max-width:900px; margin:auto; text-align:center; font-size:26px; line-height:1.7;">
-        <h2>Main experiment</h2>
-        <p>Practice is finished.</p>
+        <h2>Main task</h2>
+        <p>Practice is complete.</p>
+        <p>From this point on, your score will count toward your bonus.</p>
+        <p>Earlier correct answers earn more points.</p>
         <p>You will now complete ${mainTrials.length} main trials.</p>
-        <p>Press any key to begin the main experiment.</p>
+        <p>Press any key to begin.</p>
       </div>
     `
   });
@@ -1154,8 +1171,9 @@
         type: jsPsychHtmlKeyboardResponse,
         stimulus: `
           <div style="max-width:900px; margin:auto; text-align:center; font-size:26px; line-height:1.7;">
-            <h2>Next block</h2>
-            <p>Press any key to continue.</p>
+            <h2>Break</h2>
+            <p>You may take a short break now.</p>
+            <p>Press any key when you are ready to continue.</p>
           </div>
         `
       });
@@ -1169,8 +1187,8 @@
     stimulus: `
       <div style="max-width:900px; margin:auto; text-align:center; font-size:28px; line-height:1.7;">
         <h2>Finished</h2>
-        <p>Your cleaned data file will download automatically.</p>
-        <p>Thank you.</p>
+        <p>Thank you for completing the experiment.</p>
+        <p>Your responses have been recorded.</p>
         <p>Press any key to end.</p>
       </div>
     `
