@@ -196,7 +196,8 @@
     practiceBlock3RepeatsPerCondition: 2,
     practiceEasyStep: 12,
     mainRepeatsPerCondition: 60,
-    mainTrialsPerBlock: 40
+    mainTrialsPerBlock: 40,
+    attentionCheckInterval: 80
   };
 
   const DOT_COUNT_CONDITION_PATTERNS = [
@@ -231,7 +232,7 @@
     },
     1500: {
       cond_1: 3,
-      cond_2: 4,
+      cond_2: 5,
       cond_3: 6,
       cond_4: 7
     }
@@ -353,14 +354,27 @@
     if (!Number.isFinite(ppm) || ppm <= 0) ppm = BASELINE_RENDER.pxPerMm;
     if (!Number.isFinite(vdm) || vdm <= 0) vdm = BASELINE_RENDER.viewingDistanceMm;
 
+    const areaWidthPx = clamp(degToPx(TARGET_VISUAL_ANGLES.areaWidthDeg, ppm, vdm), 700, 1500);
+    const areaHeightPx = clamp(degToPx(TARGET_VISUAL_ANGLES.areaHeightDeg, ppm, vdm), 500, 1100);
+    const rawCentersPx = TARGET_VISUAL_ANGLES.centersDeg.map(c => ({
+      x: degToPx(c.x, ppm, vdm),
+      y: degToPx(c.y, ppm, vdm)
+    }));
+    const minX = Math.min(...rawCentersPx.map(c => c.x));
+    const maxX = Math.max(...rawCentersPx.map(c => c.x));
+    const minY = Math.min(...rawCentersPx.map(c => c.y));
+    const maxY = Math.max(...rawCentersPx.map(c => c.y));
+    const offsetX = (areaWidthPx / 2) - ((minX + maxX) / 2);
+    const offsetY = (areaHeightPx / 2) - ((minY + maxY) / 2);
+
     DISPLAY = {
-      areaWidthPx: clamp(degToPx(TARGET_VISUAL_ANGLES.areaWidthDeg, ppm, vdm), 700, 1500),
-      areaHeightPx: clamp(degToPx(TARGET_VISUAL_ANGLES.areaHeightDeg, ppm, vdm), 500, 1100),
+      areaWidthPx: areaWidthPx,
+      areaHeightPx: areaHeightPx,
       buttonSizePx: clamp(degToPx(TARGET_VISUAL_ANGLES.buttonSizeDeg, ppm, vdm), 110, 260),
       displayedSvgSizePx: clamp(degToPx(TARGET_VISUAL_ANGLES.displayedSvgSizeDeg, ppm, vdm), 90, 220),
-      centersPx: TARGET_VISUAL_ANGLES.centersDeg.map(c => ({
-        x: degToPx(c.x, ppm, vdm),
-        y: degToPx(c.y, ppm, vdm)
+      centersPx: rawCentersPx.map(c => ({
+        x: c.x + offsetX,
+        y: c.y + offsetY
       }))
     };
   }
@@ -460,7 +474,9 @@
   }
 
   function renderCorrectFeedback() {
-    const pointsLine = trialState.currentTrial?.practice
+    const pointsLine = trialState.currentTrial?.practice ||
+      trialState.currentTrial?.attentionCheck ||
+      trialState.lastPointsAwarded <= 0
       ? ""
       : `<div class="feedback-points">+${trialState.lastPointsAwarded} points</div>`;
 
@@ -483,7 +499,9 @@
   function makeDotCountTrial(trialIndex, duration, conditionSpec, options = {}) {
     const {
       practice = false,
-      conditionNamePrefix = ""
+      conditionNamePrefix = "",
+      conditionNameOverride = "",
+      attentionCheck = false
     } = options;
 
     const dotCounts = shuffle(buildDotCounts(conditionSpec));
@@ -497,10 +515,11 @@
     return {
       trialIndex,
       practice,
+      attentionCheck,
       duration,
-      condition_name: conditionNamePrefix
+      condition_name: conditionNameOverride || (conditionNamePrefix
         ? `${conditionNamePrefix}_${conditionSpec.id}_${conditionSpec.label}`
-        : `${conditionSpec.id}_${conditionSpec.label}`,
+        : `${conditionSpec.id}_${conditionSpec.label}`),
       correctPosition,
       options: trialOptions
     };
@@ -574,6 +593,18 @@
     return buildTrialsFromCombos(mainCombos, startIndex);
   }
 
+  function makeAttentionCheckTrial(trialIndex) {
+    return makeDotCountTrial(
+      trialIndex,
+      CONFIG.practiceBlock1Duration,
+      PRACTICE_EASY_CONDITION,
+      {
+        conditionNameOverride: "easy",
+        attentionCheck: true
+      }
+    );
+  }
+
   const practiceBlocks = buildPracticeBlocks(1);
   const practiceTrials = practiceBlocks.reduce((allTrials, block) => {
     return allTrials.concat(block.trials);
@@ -601,6 +632,8 @@
     lastPointsAwarded: 0
   };
 
+  const interactionEvents = [];
+
   function initializeTrialState(trialConfig) {
     trialState.currentTrial = trialConfig;
     trialState.available = Array(CONFIG.nOptions).fill(true);
@@ -618,8 +651,39 @@
    * 7. JSPSYCH SETUP    *
    ***********************/
   const jsPsych = initJsPsych({
+    on_interaction_data_update: function(data) {
+      const eventNameMap = {
+        blur: "window_blur",
+        focus: "window_focus",
+        fullscreenexit: "fullscreen_exit"
+      };
+
+      if (!eventNameMap[data.event]) return;
+
+      const currentTrial = trialState.currentTrial;
+      interactionEvents.push({
+        event: eventNameMap[data.event],
+        time_elapsed: data.time ?? Math.round(performance.now()),
+        trial_index: currentTrial?.trialIndex ?? null,
+        practice: currentTrial?.practice ?? null,
+        condition_name: currentTrial?.condition_name ?? null,
+        stimulus_duration: currentTrial?.duration ?? null,
+        correct_position: currentTrial?.correctPosition ?? null,
+        choice_number: trialState.choiceNumber || null,
+        elapsed_ms_from_trial_start:
+          trialState.trialStartTime !== null
+            ? Math.round(performance.now() - trialState.trialStartTime)
+            : null,
+        system_event_time_ms: data.time ?? Math.round(performance.now()),
+        system_event_iso_time: new Date().toISOString(),
+        window_has_focus: document.hasFocus(),
+        fullscreen_active: isFullscreenActive(),
+        document_visibility_state: document.visibilityState,
+        jspsych_interaction_trial: data.trial ?? null
+      });
+    },
     on_finish: function() {
-      const raw = jsPsych.data.get().values();
+      const raw = jsPsych.data.get().values().concat(interactionEvents);
 
       const cleaned = raw.map(row => ({
         subject_id: experimentState.subjectID || null,
@@ -627,6 +691,13 @@
         mm_per_px: row.mm_per_px ?? null,
         viewing_distance_mm: row.viewing_distance_mm ?? null,
         event: row.event ?? null,
+        experiment_elapsed_ms: row.time_elapsed ?? row.system_event_time_ms ?? null,
+        experiment_elapsed_min:
+          row.time_elapsed !== undefined && row.time_elapsed !== null
+            ? (row.time_elapsed / 60000).toFixed(3)
+            : row.system_event_time_ms !== undefined && row.system_event_time_ms !== null
+              ? (row.system_event_time_ms / 60000).toFixed(3)
+              : null,
         rt: row.rt ?? null,
         trial_index: row.trial_index ?? null,
         practice: row.practice ?? null,
@@ -651,7 +722,15 @@
         total_points: row.total_points ?? null,
         confidence_choice_correct: row.choice_correct ?? null,
         confidence_choice_rt: row.choice_rt ?? null,
-        confidence: row.confidence ?? null
+        confidence: row.confidence ?? null,
+        system_event_time_ms: row.system_event_time_ms ?? null,
+        system_event_iso_time: row.system_event_iso_time ?? null,
+        window_has_focus: row.window_has_focus ?? null,
+        fullscreen_active: row.fullscreen_active ?? null,
+        document_visibility_state: row.document_visibility_state ?? null,
+        jspsych_interaction_trial: row.jspsych_interaction_trial ?? null,
+        fullscreen_reentry_stage: row.fullscreen_reentry_stage ?? null,
+        fullscreen_success: row.success ?? null
       }));
 
       const columns = [
@@ -660,6 +739,8 @@
         "mm_per_px",
         "viewing_distance_mm",
         "event",
+        "experiment_elapsed_ms",
+        "experiment_elapsed_min",
         "rt",
         "trial_index",
         "practice",
@@ -678,7 +759,15 @@
         "total_points",
         "confidence_choice_correct",
         "confidence_choice_rt",
-        "confidence"
+        "confidence",
+        "system_event_time_ms",
+        "system_event_iso_time",
+        "window_has_focus",
+        "fullscreen_active",
+        "document_visibility_state",
+        "jspsych_interaction_trial",
+        "fullscreen_reentry_stage",
+        "fullscreen_success"
       ];
 
       const escapeCSV = (value) => {
@@ -700,6 +789,15 @@
       downloadCSV(`p${safeSubjectID}.csv`, csv);
     }
   });
+
+  function isFullscreenActive() {
+    return Boolean(
+      document.fullscreenElement ||
+      document.webkitFullscreenElement ||
+      document.mozFullScreenElement ||
+      document.msFullscreenElement
+    );
+  }
 
   const timeline = [];
 
@@ -791,7 +889,7 @@
     type: jsPsychVirtualChinrest,
     blindspot_reps: 3,
     resize_units: "none",
-    item_path: "card.png",
+    item_path: "./card.png",
     viewing_distance_report: "none",
     on_finish: function(data) {
       const pixelsPerMm =
@@ -963,6 +1061,37 @@
   /**************************
    * 12. GENERIC TRIAL PIECES
    **************************/
+  function makeFullscreenRecoveryTrial(trialConfig, stageName) {
+    return {
+      timeline: [
+        {
+          type: jsPsychFullscreen,
+          fullscreen_mode: true,
+          message: `
+            <div style="max-width:900px; margin:auto; text-align:center; font-size:24px; line-height:1.7;">
+              <h2>Please return to full screen</h2>
+              <p>The experiment needs to continue in full-screen mode.</p>
+              <p>Click the button below to continue.</p>
+            </div>
+          `,
+          button_label: "Return to full screen",
+          data: {
+            event: "fullscreen_reentry",
+            fullscreen_reentry_stage: stageName,
+            trial_index: trialConfig.trialIndex,
+            practice: trialConfig.practice,
+            condition_name: trialConfig.condition_name,
+            stimulus_duration: trialConfig.duration,
+            correct_position: trialConfig.correctPosition
+          }
+        }
+      ],
+      conditional_function: function() {
+        return !isFullscreenActive();
+      }
+    };
+  }
+
   function makeTrialTimeline(trialConfig) {
     const initTrial = {
       type: jsPsychCallFunction,
@@ -1096,7 +1225,12 @@
     };
 
     const chooseUntilCorrect = {
-      timeline: [choice, confidence],
+      timeline: [
+        makeFullscreenRecoveryTrial(trialConfig, "before_choice"),
+        choice,
+        makeFullscreenRecoveryTrial(trialConfig, "before_confidence"),
+        confidence
+      ],
       loop_function: function() {
         return !trialState.lastChoiceCorrect;
       }
@@ -1110,7 +1244,9 @@
       choices: "NO_KEYS",
       trial_duration: CONFIG.correctFeedbackDuration,
       on_start: function(trial) {
-        const pointsAwarded = trialConfig.practice ? 0 : trialState.lastPointsAwarded;
+        const pointsAwarded = trialConfig.practice || trialConfig.attentionCheck
+          ? 0
+          : trialState.lastPointsAwarded;
         experimentState.totalPoints += pointsAwarded;
         trial.data.points_awarded = pointsAwarded;
         trial.data.total_points = experimentState.totalPoints;
@@ -1126,7 +1262,16 @@
     };
 
     return {
-      timeline: [initTrial, fixation, stimulus, chooseUntilCorrect, iti]
+      timeline: [
+        initTrial,
+        makeFullscreenRecoveryTrial(trialConfig, "before_fixation"),
+        fixation,
+        makeFullscreenRecoveryTrial(trialConfig, "before_stimulus"),
+        stimulus,
+        chooseUntilCorrect,
+        makeFullscreenRecoveryTrial(trialConfig, "before_feedback"),
+        iti
+      ]
     };
   }
 
@@ -1159,7 +1304,6 @@
         <p>Practice is complete.</p>
         <p>From this point on, your score will count toward your bonus.</p>
         <p>Earlier correct answers earn more points.</p>
-        <p>You will now complete ${mainTrials.length} main trials.</p>
         <p>Press any key to begin.</p>
       </div>
     `
@@ -1167,11 +1311,13 @@
 
   mainTrials.forEach((trialConfig, idx) => {
     if (idx > 0 && idx % CONFIG.mainTrialsPerBlock === 0) {
+      const percentComplete = Math.round((idx / mainTrials.length) * 100);
       timeline.push({
         type: jsPsychHtmlKeyboardResponse,
         stimulus: `
           <div style="max-width:900px; margin:auto; text-align:center; font-size:26px; line-height:1.7;">
             <h2>Break</h2>
+            <p>You have completed ${percentComplete}% of the main task.</p>
             <p>You may take a short break now.</p>
             <p>Press any key when you are ready to continue.</p>
           </div>
@@ -1180,18 +1326,28 @@
     }
 
     timeline.push(makeTrialTimeline(trialConfig));
+
+    if ((idx + 1) % CONFIG.attentionCheckInterval === 0) {
+      timeline.push(makeTrialTimeline(makeAttentionCheckTrial(trialConfig.trialIndex + 0.5)));
+    }
   });
 
   timeline.push({
     type: jsPsychHtmlKeyboardResponse,
-    stimulus: `
+    stimulus: function() {
+      return `
       <div style="max-width:900px; margin:auto; text-align:center; font-size:28px; line-height:1.7;">
         <h2>Finished</h2>
+        <p style="font-size:34px; font-weight:700; color:#178f3c;">
+          Congratulations! You earned ${experimentState.totalPoints} points.
+        </p>
         <p>Thank you for completing the experiment.</p>
-        <p>Your responses have been recorded.</p>
+        <p>Your responses will be downloaded automatically.</p>
+        <p>After exiting full screen, you will be able to see the downloaded file.</p>
         <p>Press any key to end.</p>
       </div>
-    `
+      `;
+    }
   });
 
   /***********************
