@@ -1,0 +1,633 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>PDM-WM test trial</title>
+
+  <script src="https://unpkg.com/jspsych@8.2.3"></script>
+  <link href="https://unpkg.com/jspsych@8.2.3/css/jspsych.css" rel="stylesheet" type="text/css" />
+  <script src="https://unpkg.com/@jspsych/plugin-html-keyboard-response@2.0.0"></script>
+  <script src="https://unpkg.com/@jspsych/plugin-call-function@2.0.0"></script>
+
+  <style>
+    body {
+      background: white;
+    }
+
+    .subject-wrap {
+      max-width: 700px;
+      margin: 120px auto;
+      text-align: center;
+      font-size: 24px;
+      line-height: 1.6;
+    }
+
+    .subject-input {
+      font-size: 28px;
+      padding: 10px 14px;
+      width: 260px;
+      text-align: center;
+      margin-top: 16px;
+    }
+
+    .subject-btn {
+      font-size: 22px;
+      padding: 10px 22px;
+      margin-top: 20px;
+      cursor: pointer;
+    }
+
+    .error-text {
+      color: #b00020;
+      margin-top: 12px;
+      font-size: 18px;
+      min-height: 24px;
+    }
+
+    .task-wrap {
+      margin: 0 auto;
+      text-align: center;
+    }
+
+    .question-title {
+      font-size: 28px;
+      margin-bottom: 12px;
+      font-weight: 600;
+      min-height: 34px;
+    }
+
+    .question-subtitle {
+      font-size: 18px;
+      margin-bottom: 20px;
+      color: #444;
+      min-height: 22px;
+    }
+
+    .pentagon-area {
+      margin: 0 auto;
+      position: relative;
+    }
+
+    .option-btn {
+      position: absolute;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      border: none;
+      background: transparent;
+      padding: 0;
+      line-height: 0;
+      cursor: pointer;
+      transform: translate(-50%, -50%);
+    }
+
+    .option-btn.hidden {
+      visibility: hidden;
+      pointer-events: none;
+    }
+
+    .option-btn svg {
+      overflow: visible;
+      display: block;
+      margin: 0;
+    }
+
+    .fixation {
+      font-size: 64px;
+      font-weight: 600;
+    }
+
+    .confidence-wrap {
+      width: 800px;
+      margin: 100px auto 0 auto;
+      text-align: center;
+    }
+
+    .confidence-title {
+      font-size: 30px;
+      margin-bottom: 18px;
+      font-weight: 600;
+    }
+
+    .confidence-subtitle {
+      font-size: 18px;
+      margin-bottom: 35px;
+      color: #444;
+    }
+
+    .confidence-buttons {
+      display: flex;
+      justify-content: center;
+      gap: 22px;
+      margin-top: 20px;
+    }
+
+    .conf-btn {
+      width: 90px;
+      height: 90px;
+      font-size: 32px;
+      border-radius: 14px;
+      border: 2px solid #222;
+      background: white;
+      cursor: pointer;
+    }
+
+    .confidence-anchor-row {
+      width: 520px;
+      margin: 14px auto 0 auto;
+      display: flex;
+      justify-content: space-between;
+      font-size: 16px;
+      color: #555;
+    }
+
+    .feedback-wrap {
+      width: 800px;
+      margin: 140px auto 0 auto;
+      text-align: center;
+    }
+
+    .feedback-title {
+      font-size: 44px;
+      font-weight: 700;
+      color: #178f3c;
+      line-height: 1.1;
+    }
+
+    .feedback-title.incorrect {
+      color: #b00020;
+    }
+
+    .feedback-points {
+      margin-top: 10px;
+      font-size: 30px;
+      font-weight: 600;
+      color: #178f3c;
+      line-height: 1.1;
+    }
+  </style>
+</head>
+<body></body>
+
+<script>
+  const CONFIG = {
+    nOptions: 5,
+    fixationDuration: 700,
+    correctFeedbackDuration: 900,
+    stimulusRadius: 52,
+    svgSize: 120,
+    maxDotCount: 100
+  };
+
+  const DISPLAY = {
+    areaWidthPx: 1000,
+    areaHeightPx: 700,
+    buttonSizePx: 170,
+    displayedSvgSizePx: 150,
+    centersPx: [
+      { x: 500, y: 95 },
+      { x: 220, y: 300 },
+      { x: 780, y: 300 },
+      { x: 325, y: 590 },
+      { x: 675, y: 590 }
+    ]
+  };
+
+  const experimentState = {
+    subjectID: "",
+    totalPoints: 0
+  };
+
+  const trialState = {
+    currentTrial: null,
+    available: [],
+    choiceNumber: 0,
+    trialStartTime: null,
+    choiceScreenStartTime: null,
+    confidenceScreenStartTime: null,
+    lastChoice: null,
+    lastChoiceCorrect: null,
+    lastChoiceRT: null,
+    lastPointsAwarded: 0
+  };
+
+  const jsPsych = initJsPsych({
+    on_finish: function() {
+      const csv = jsPsych.data.get().csv();
+      const safeSubjectID = (experimentState.subjectID || "unknown").replace(/[^\w-]/g, "");
+      const filename = `test_p${safeSubjectID}_${new Date().toISOString().replace(/[:.]/g, "-")}.csv`;
+
+      saveCSVToServer(filename, csv)
+        .then(response => {
+          if (!response.ok) {
+            throw new Error(`Server returned ${response.status}`);
+          }
+          return response.text();
+        })
+        .then(message => {
+          console.log(message);
+        })
+        .catch(error => {
+          console.error("Could not save test data to server:", error);
+        });
+    }
+  });
+
+  function saveCSVToServer(filename, text) {
+    const formData = new URLSearchParams();
+    formData.append("filename", filename);
+    formData.append("csvdata", text);
+
+    return fetch("save_data.php", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/x-www-form-urlencoded"
+      },
+      body: formData.toString()
+    });
+  }
+
+  function shuffle(array) {
+    const arr = [...array];
+    for (let i = arr.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [arr[i], arr[j]] = [arr[j], arr[i]];
+    }
+    return arr;
+  }
+
+  function mulberry32(seed) {
+    return function() {
+      let t = seed += 0x6D2B79F5;
+      t = Math.imul(t ^ (t >>> 15), t | 1);
+      t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+      return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+    };
+  }
+
+  function generateDots(nDots, seed) {
+    const rand = mulberry32(seed);
+    const points = [];
+    const center = CONFIG.svgSize / 2;
+    const margin = 10;
+    const radius = CONFIG.stimulusRadius - 6;
+
+    let attempts = 0;
+    while (points.length < nDots && attempts < nDots * 250) {
+      attempts++;
+      const x = margin + rand() * (CONFIG.svgSize - 2 * margin);
+      const y = margin + rand() * (CONFIG.svgSize - 2 * margin);
+      const dx = x - center;
+      const dy = y - center;
+      if ((dx * dx + dy * dy) > radius * radius) continue;
+
+      let overlaps = false;
+      for (const p of points) {
+        const ddx = x - p.x;
+        const ddy = y - p.y;
+        if (ddx * ddx + ddy * ddy < 20) {
+          overlaps = true;
+          break;
+        }
+      }
+      if (!overlaps) points.push({ x, y });
+    }
+    return points;
+  }
+
+  function makeHardTrial() {
+    const dotCounts = shuffle([100, 96, 96, 96, 96]);
+    const correctPosition = dotCounts.indexOf(CONFIG.maxDotCount);
+    const options = dotCounts.map((nDots, optionIndex) => ({
+      nDots,
+      points: generateDots(nDots, 100 + optionIndex * 17 + 1)
+    }));
+
+    return {
+      trialIndex: 1,
+      practice: false,
+      condition_name: "test_hard_four_same_500ms",
+      duration: 500,
+      correctPosition,
+      options
+    };
+  }
+
+  const testTrial = makeHardTrial();
+
+  function getOptionStyle(index) {
+    const center = DISPLAY.centersPx[index];
+    return `
+      left: ${center.x}px;
+      top: ${center.y}px;
+      width: ${DISPLAY.buttonSizePx}px;
+      height: ${DISPLAY.buttonSizePx}px;
+    `;
+  }
+
+  function getPointsForAttempt(attemptNumber) {
+    const pointsByAttempt = [4, 3, 2, 1, 0];
+    return pointsByAttempt[attemptNumber - 1] ?? 0;
+  }
+
+  function initializeTrialState(trialConfig) {
+    trialState.currentTrial = trialConfig;
+    trialState.available = Array(CONFIG.nOptions).fill(true);
+    trialState.choiceNumber = 0;
+    trialState.trialStartTime = performance.now();
+    trialState.choiceScreenStartTime = null;
+    trialState.confidenceScreenStartTime = null;
+    trialState.lastChoice = null;
+    trialState.lastChoiceCorrect = null;
+    trialState.lastChoiceRT = null;
+    trialState.lastPointsAwarded = 0;
+  }
+
+  function renderOptionSVG(option, showDots = true) {
+    const center = CONFIG.svgSize / 2;
+    const radius = CONFIG.stimulusRadius;
+    const outline = `
+      <circle cx="${center}" cy="${center}" r="${radius}"
+        fill="white" stroke="black" stroke-width="3"></circle>
+    `;
+    const dots = showDots
+      ? option.points.map(p => `<circle cx="${p.x.toFixed(1)}" cy="${p.y.toFixed(1)}" r="2.8" fill="black"></circle>`).join("")
+      : "";
+
+    return `
+      <svg width="${DISPLAY.displayedSvgSizePx}" height="${DISPLAY.displayedSvgSizePx}" viewBox="0 0 ${CONFIG.svgSize} ${CONFIG.svgSize}">
+        ${outline}
+        ${dots}
+      </svg>
+    `;
+  }
+
+  function renderTaskDisplayFrame(optionHTML, titleText, subtitleText) {
+    return `
+      <div class="task-wrap" style="width:${DISPLAY.areaWidthPx}px;">
+        <div class="question-title">${titleText}</div>
+        <div class="question-subtitle">${subtitleText}</div>
+        <div class="pentagon-area" style="width:${DISPLAY.areaWidthPx}px; height:${DISPLAY.areaHeightPx}px;">
+          ${optionHTML}
+        </div>
+      </div>
+    `;
+  }
+
+  function renderStimulusDisplay(trialConfig) {
+    const optionHTML = trialConfig.options.map((opt, idx) => {
+      return `
+        <div class="option-btn" style="${getOptionStyle(idx)} cursor: default;">
+          ${renderOptionSVG(opt, true)}
+        </div>
+      `;
+    }).join("");
+
+    return renderTaskDisplayFrame(optionHTML, "Which circle has the most dots?", "Look carefully.");
+  }
+
+  function renderChoiceDisplay() {
+    const trialConfig = trialState.currentTrial;
+    const optionHTML = trialConfig.options.map((opt, idx) => {
+      const hiddenClass = trialState.available[idx] ? "" : "hidden";
+      return `
+        <div class="option-btn choice-option ${hiddenClass}" style="${getOptionStyle(idx)}"
+             data-index="${idx}"
+             role="button"
+             tabindex="0"
+             aria-label="option ${idx + 1}">
+          ${renderOptionSVG(opt, false)}
+        </div>
+      `;
+    }).join("");
+
+    return renderTaskDisplayFrame(optionHTML, "Which circle has the most dots?", "Look carefully.");
+  }
+
+  function renderConfidenceDisplay() {
+    return `
+      <div class="confidence-wrap">
+        <div class="confidence-title">How confident are you?</div>
+        <div class="confidence-subtitle">
+          Confidence for choice ${trialState.choiceNumber}
+        </div>
+        <div class="confidence-buttons">
+          <button class="conf-btn confidence-btn" data-conf="1">1</button>
+          <button class="conf-btn confidence-btn" data-conf="2">2</button>
+          <button class="conf-btn confidence-btn" data-conf="3">3</button>
+          <button class="conf-btn confidence-btn" data-conf="4">4</button>
+        </div>
+        <div class="confidence-anchor-row">
+          <div>Not confident</div>
+          <div>Very confident</div>
+        </div>
+      </div>
+    `;
+  }
+
+  function renderTrialFeedback() {
+    const wasCorrect = trialState.lastChoiceCorrect;
+    const pointsLine = wasCorrect && trialState.lastPointsAwarded > 0
+      ? `<div class="feedback-points">+${trialState.lastPointsAwarded} points</div>`
+      : "";
+    const feedbackClass = wasCorrect ? "feedback-title" : "feedback-title incorrect";
+    const feedbackText = wasCorrect ? "CORRECT!" : "INCORRECT!";
+
+    return `
+      <div class="feedback-wrap">
+        <div class="${feedbackClass}">${feedbackText}</div>
+        ${pointsLine}
+      </div>
+    `;
+  }
+
+  function makeTrialTimeline(trialConfig) {
+    const initTrial = {
+      type: jsPsychCallFunction,
+      func: function() {
+        initializeTrialState(trialConfig);
+      }
+    };
+
+    const fixation = {
+      type: jsPsychHtmlKeyboardResponse,
+      stimulus: `<div class="fixation">+</div>`,
+      choices: "NO_KEYS",
+      trial_duration: CONFIG.fixationDuration
+    };
+
+    const stimulus = {
+      type: jsPsychHtmlKeyboardResponse,
+      stimulus: function() {
+        return renderStimulusDisplay(trialConfig);
+      },
+      choices: "NO_KEYS",
+      trial_duration: trialConfig.duration
+    };
+
+    const choice = {
+      type: jsPsychHtmlKeyboardResponse,
+      stimulus: function() {
+        return renderChoiceDisplay();
+      },
+      choices: "NO_KEYS",
+      on_load: function() {
+        trialState.choiceScreenStartTime = performance.now();
+        const clickable = document.querySelectorAll(".choice-option:not(.hidden)");
+        clickable.forEach(btn => {
+          btn.addEventListener("click", function() {
+            const selectedIndex = parseInt(this.dataset.index, 10);
+            const rt = Math.round(performance.now() - trialState.choiceScreenStartTime);
+            const correct = selectedIndex === trialState.currentTrial.correctPosition;
+            jsPsych.finishTrial({
+              event: "choice",
+              subject_id: experimentState.subjectID,
+              trial_index: trialState.currentTrial.trialIndex,
+              condition_name: trialState.currentTrial.condition_name,
+              stimulus_duration: trialState.currentTrial.duration,
+              correct_position: trialState.currentTrial.correctPosition,
+              choice_number: trialState.choiceNumber + 1,
+              choice_index: selectedIndex,
+              rt,
+              correct,
+              remaining_options_before_choice: trialState.available.filter(x => x).length
+            });
+          });
+        });
+      },
+      on_finish: function(data) {
+        trialState.choiceNumber += 1;
+        trialState.lastChoice = data.choice_index;
+        trialState.lastChoiceCorrect = data.correct;
+        trialState.lastChoiceRT = data.rt;
+        trialState.lastPointsAwarded = data.correct ? getPointsForAttempt(data.choice_number) : 0;
+        if (!data.correct) {
+          trialState.available[data.choice_index] = false;
+        }
+      }
+    };
+
+    const confidence = {
+      type: jsPsychHtmlKeyboardResponse,
+      stimulus: function() {
+        return renderConfidenceDisplay();
+      },
+      choices: "NO_KEYS",
+      on_load: function() {
+        trialState.confidenceScreenStartTime = performance.now();
+        const buttons = document.querySelectorAll(".confidence-btn");
+        buttons.forEach(btn => {
+          btn.addEventListener("click", function() {
+            const conf = parseInt(this.dataset.conf, 10);
+            const rt = Math.round(performance.now() - trialState.confidenceScreenStartTime);
+            jsPsych.finishTrial({
+              event: "confidence",
+              subject_id: experimentState.subjectID,
+              trial_index: trialState.currentTrial.trialIndex,
+              condition_name: trialState.currentTrial.condition_name,
+              choice_number: trialState.choiceNumber,
+              choice_index: trialState.lastChoice,
+              choice_correct: trialState.lastChoiceCorrect,
+              choice_rt: trialState.lastChoiceRT,
+              confidence: conf,
+              rt
+            });
+          });
+        });
+      }
+    };
+
+    const chooseUntilCorrect = {
+      timeline: [choice, confidence],
+      loop_function: function() {
+        return !trialState.lastChoiceCorrect && trialState.choiceNumber < 4;
+      }
+    };
+
+    const feedback = {
+      type: jsPsychHtmlKeyboardResponse,
+      stimulus: function() {
+        return renderTrialFeedback();
+      },
+      choices: "NO_KEYS",
+      trial_duration: CONFIG.correctFeedbackDuration,
+      on_start: function(trial) {
+        const pointsAwarded = trialState.lastPointsAwarded;
+        experimentState.totalPoints += pointsAwarded;
+        trial.data = {
+          event: "feedback",
+          subject_id: experimentState.subjectID,
+          points_awarded: pointsAwarded,
+          total_points: experimentState.totalPoints,
+          correct: trialState.lastChoiceCorrect
+        };
+      }
+    };
+
+    return {
+      timeline: [initTrial, fixation, stimulus, chooseUntilCorrect, feedback]
+    };
+  }
+
+  const timeline = [];
+
+  timeline.push({
+    type: jsPsychHtmlKeyboardResponse,
+    stimulus: `
+      <div class="subject-wrap">
+        <h2>Test ID</h2>
+        <p>Please enter an ID before starting.</p>
+        <input id="subject-id-input" class="subject-input" type="text" autocomplete="off" />
+        <br>
+        <button id="subject-id-btn" class="subject-btn">Continue</button>
+        <div id="subject-id-error" class="error-text"></div>
+      </div>
+    `,
+    choices: "NO_KEYS",
+    on_load: function() {
+      const input = document.getElementById("subject-id-input");
+      const btn = document.getElementById("subject-id-btn");
+      const error = document.getElementById("subject-id-error");
+      input.focus();
+
+      function submitID() {
+        const value = input.value.trim();
+        if (!value) {
+          error.textContent = "Please enter an ID.";
+          return;
+        }
+        experimentState.subjectID = value;
+        jsPsych.finishTrial({
+          event: "subject_id_entry",
+          subject_id: value
+        });
+      }
+
+      btn.addEventListener("click", submitID);
+      input.addEventListener("keydown", function(e) {
+        if (e.key === "Enter") submitID();
+      });
+    }
+  });
+
+  timeline.push(makeTrialTimeline(testTrial));
+
+  timeline.push({
+    type: jsPsychHtmlKeyboardResponse,
+    stimulus: function() {
+      return `
+        <div style="max-width:900px; margin:auto; text-align:center; font-size:28px; line-height:1.7;">
+          <h2>Finished</h2>
+          <p>Test is complete.</p>
+          <p>You earned ${experimentState.totalPoints} points.</p>
+          <p>Your test responses will be saved to the experiment server.</p>
+          <p>Press any key to end.</p>
+        </div>
+      `;
+    }
+  });
+
+  jsPsych.run(timeline);
+</script>
+</html>
