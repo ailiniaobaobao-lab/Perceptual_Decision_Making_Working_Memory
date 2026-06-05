@@ -130,12 +130,42 @@
       line-height: 1.1;
     }
 
+    .feedback-title.incorrect {
+      color: #b00020;
+    }
+
     .feedback-points {
       margin-top: 10px;
       font-size: 30px;
       font-weight: 600;
       color: #178f3c;
       line-height: 1.1;
+    }
+
+    .progress-shell {
+      width: min(760px, calc(100vw - 80px));
+      position: fixed;
+      top: 26px;
+      left: 50%;
+      transform: translateX(-50%);
+      z-index: 10;
+    }
+
+    .progress-track {
+      width: 100%;
+      height: 14px;
+      border: 2px solid #222;
+      border-radius: 999px;
+      background: white;
+      overflow: hidden;
+      box-sizing: border-box;
+    }
+
+    .progress-fill {
+      height: 100%;
+      background: #178f3c;
+      border-radius: 999px;
+      transition: width 200ms ease;
     }
 
     .fixation {
@@ -266,16 +296,23 @@
     };
   }
 
-  function downloadCSV(filename, text) {
-    const blob = new Blob([text], { type: 'text/csv;charset=utf-8;' });
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement("a");
-    link.setAttribute("href", url);
-    link.setAttribute("download", filename);
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-    URL.revokeObjectURL(url);
+  function saveCSVToServer(filename, text) {
+    const formData = new URLSearchParams();
+    formData.append("filename", filename);
+    formData.append("csvdata", text);
+
+    return fetch("save_data.php", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/x-www-form-urlencoded"
+      },
+      body: formData.toString()
+    });
+  }
+
+  function generateCompletionCode() {
+    const randomPart = Math.random().toString(36).slice(2, 8).toUpperCase();
+    return `PDM-${randomPart}`;
   }
 
   function positionName(index) {
@@ -469,20 +506,26 @@
   }
 
   function getPointsForAttempt(attemptNumber) {
-    const pointsByAttempt = [10, 8, 6, 4, 0];
+    const pointsByAttempt = [4, 3, 2, 1, 0];
     return pointsByAttempt[attemptNumber - 1] ?? 0;
   }
 
-  function renderCorrectFeedback() {
+  function renderTrialFeedback() {
+    const wasCorrect = trialState.lastChoiceCorrect;
     const pointsLine = trialState.currentTrial?.practice ||
       trialState.currentTrial?.attentionCheck ||
+      !wasCorrect ||
       trialState.lastPointsAwarded <= 0
       ? ""
       : `<div class="feedback-points">+${trialState.lastPointsAwarded} points</div>`;
 
+    const feedbackClass = wasCorrect ? "feedback-title" : "feedback-title incorrect";
+    const feedbackText = wasCorrect ? "CORRECT!" : "INCORRECT!";
+
     return `
+      ${renderMainProgressBar(trialState.currentTrial, true)}
       <div class="feedback-wrap">
-        <div class="feedback-title">CORRECT!</div>
+        <div class="${feedbackClass}">${feedbackText}</div>
         ${pointsLine}
       </div>
     `;
@@ -616,6 +659,7 @@
    ****************************/
   const experimentState = {
     subjectID: "",
+    completionCode: generateCompletionCode(),
     totalPoints: 0
   };
 
@@ -687,6 +731,7 @@
 
       const cleaned = raw.map(row => ({
         subject_id: experimentState.subjectID || null,
+        completion_code: experimentState.completionCode,
         pixels_per_mm: row.pixels_per_mm ?? null,
         mm_per_px: row.mm_per_px ?? null,
         viewing_distance_mm: row.viewing_distance_mm ?? null,
@@ -735,6 +780,7 @@
 
       const columns = [
         "subject_id",
+        "completion_code",
         "pixels_per_mm",
         "mm_per_px",
         "viewing_distance_mm",
@@ -786,7 +832,21 @@
 
       const csv = csvLines.join("\n");
       const safeSubjectID = (experimentState.subjectID || "unknown").replace(/[^\w-]/g, "");
-      downloadCSV(`p${safeSubjectID}.csv`, csv);
+      const filename = `p${safeSubjectID}_${new Date().toISOString().replace(/[:.]/g, "-")}.csv`;
+
+      saveCSVToServer(filename, csv)
+        .then(response => {
+          if (!response.ok) {
+            throw new Error(`Server returned ${response.status}`);
+          }
+          return response.text();
+        })
+        .then(message => {
+          console.log(message);
+        })
+        .catch(error => {
+          console.error("Could not save data to server:", error);
+        });
     }
   });
 
@@ -808,8 +868,8 @@
     type: jsPsychHtmlKeyboardResponse,
     stimulus: `
       <div class="subject-wrap">
-        <h2>Participant ID</h2>
-        <p>Please enter the participant ID before starting.</p>
+        <h2>MTurk Worker ID</h2>
+        <p>Please enter your MTurk Worker ID before starting.</p>
         <input id="subject-id-input" class="subject-input" type="text" autocomplete="off" />
         <br>
         <button id="subject-id-btn" class="subject-btn">Continue</button>
@@ -827,13 +887,14 @@
       function submitID() {
         const value = input.value.trim();
         if (!value) {
-          error.textContent = "Please enter a participant ID.";
+          error.textContent = "Please enter your MTurk Worker ID.";
           return;
         }
         experimentState.subjectID = value;
         jsPsych.finishTrial({
           event: "subject_id_entry",
-          subject_id: value
+          subject_id: value,
+          completion_code: experimentState.completionCode
         });
       }
 
@@ -856,22 +917,9 @@
       `
       <div style="max-width:900px; margin:auto; text-align:left; font-size:22px; line-height:1.6;">
         <h2>Screen setup</h2>
-        <p>Before the task begins, you will complete a short screen setup.</p>
-        <p>This helps keep the circle size more consistent across participants.</p>
-      </div>
-      `,
-      `
-      <div style="max-width:900px; margin:auto; text-align:left; font-size:22px; line-height:1.6;">
-        <h2>What you need</h2>
         <p>Please have a real credit card or bank card ready.</p>
-        <p>You will first match an on-screen rectangle to the size of your card.</p>
-      </div>
-      `,
-      `
-      <div style="max-width:900px; margin:auto; text-align:left; font-size:22px; line-height:1.6;">
-        <h2>Viewing distance</h2>
-        <p>Next, you will complete a short blind-spot step to estimate viewing distance.</p>
-        <p>Please sit normally, keep your head still, and follow the on-screen instructions carefully.</p>
+        <p>You will use it for a brief screen setup before the task begins.</p>
+        <p>Please sit normally, keep your head still, and follow the on-screen instructions.</p>
       </div>
       `
     ],
@@ -944,6 +992,7 @@
         <p>After the dots disappear, the empty circles will remain on the screen.</p>
         <p>Select the circle that had the most dots.</p>
         <p>If your choice is incorrect, that option will disappear and you will choose again.</p>
+        <p>You can make up to <strong>4 choices</strong> on each trial.</p>
       </div>
       `,
       `
@@ -952,14 +1001,17 @@
         <p>After each choice, rate how confident you are from <strong>1 to 4</strong>.</p>
         <p><strong>1</strong> = not confident</p>
         <p><strong>4</strong> = very confident</p>
+        <p>Please try to use the full confidence scale, rather than always choosing only low or only high confidence ratings.</p>
       </div>
       `,
       `
       <div style="max-width:900px; margin:auto; text-align:left; font-size:22px; line-height:1.6;">
         <h2>Points and bonus</h2>
-        <p>In the main task, earlier correct answers earn more points.</p>
-        <p>The first correct choice earns the most points, and later correct choices earn fewer points.</p>
-        <p>Your bonus payment will depend on your total score.</p>
+        <p>Your baseline payment is <strong>$10</strong>.</p>
+        <p>In the main task, you will earn <strong>$1 in bonus pay for every 250 points</strong>.</p>
+        <p>Only main task trials count toward your bonus.</p>
+        <p>In the main task, if you answer correctly on the first choice, you earn <strong>4 points</strong>. If you answer correctly on the fourth choice, you earn <strong>1 point</strong>.</p>
+        <p>If none of your first 4 choices is correct, the trial ends and earns <strong>0 points</strong>.</p>
       </div>
       `
     ],
@@ -970,8 +1022,39 @@
   /**********************************
    * 11. DISPLAY RENDER FUNCTIONS   *
    **********************************/
-  function renderTaskDisplayFrame(optionHTML, titleText, subtitleText) {
+  function isMainTaskTrial(trialConfig) {
+    return Boolean(trialConfig && !trialConfig.practice && !trialConfig.attentionCheck);
+  }
+
+  function renderProgressBar(percentComplete) {
+    const width = Math.max(0, Math.min(100, percentComplete));
     return `
+      <div class="progress-shell" aria-label="Task progress">
+        <div class="progress-track">
+          <div class="progress-fill" style="width:${width}%;"></div>
+        </div>
+      </div>
+    `;
+  }
+
+  function getMainTrialProgress(trialConfig, includeCurrentTrial = false) {
+    if (!isMainTaskTrial(trialConfig)) return null;
+
+    const mainIndex = mainTrials.findIndex(trial => trial.trialIndex === trialConfig.trialIndex);
+    if (mainIndex < 0) return null;
+
+    const completedTrials = mainIndex + (includeCurrentTrial ? 1 : 0);
+    return (completedTrials / mainTrials.length) * 100;
+  }
+
+  function renderMainProgressBar(trialConfig, includeCurrentTrial = false) {
+    const progress = getMainTrialProgress(trialConfig, includeCurrentTrial);
+    return progress === null ? "" : renderProgressBar(progress);
+  }
+
+  function renderTaskDisplayFrame(optionHTML, titleText, subtitleText, trialConfig) {
+    return `
+      ${renderMainProgressBar(trialConfig)}
       <div class="task-wrap" style="width:${DISPLAY.areaWidthPx}px;">
         <div class="question-title">${titleText}</div>
         <div class="question-subtitle">${subtitleText}</div>
@@ -991,7 +1074,7 @@
       `;
     }).join("");
 
-    return renderTaskDisplayFrame(optionHTML, "Which circle has the most dots?", "Look carefully.");
+    return renderTaskDisplayFrame(optionHTML, "Which circle has the most dots?", "Look carefully.", trialConfig);
   }
 
   function renderChoiceDisplay() {
@@ -1009,11 +1092,12 @@
       `;
     }).join("");
 
-    return renderTaskDisplayFrame(optionHTML, "Which circle has the most dots?", "Look carefully.");
+    return renderTaskDisplayFrame(optionHTML, "Which circle has the most dots?", "Look carefully.", trialConfig);
   }
 
   function renderConfidenceDisplay() {
     return `
+      ${renderMainProgressBar(trialState.currentTrial)}
       <div class="confidence-wrap">
         <div class="confidence-title">How confident are you?</div>
         <div class="confidence-subtitle">
@@ -1110,7 +1194,12 @@
 
     const fixation = {
       type: jsPsychHtmlKeyboardResponse,
-      stimulus: `<div class="fixation">+</div>`,
+      stimulus: function() {
+        return `
+          ${renderMainProgressBar(trialConfig)}
+          <div class="fixation">+</div>
+        `;
+      },
       choices: "NO_KEYS",
       trial_duration: CONFIG.fixationDuration,
       data: {
@@ -1232,14 +1321,14 @@
         confidence
       ],
       loop_function: function() {
-        return !trialState.lastChoiceCorrect;
+        return !trialState.lastChoiceCorrect && trialState.choiceNumber < 4;
       }
     };
 
     const iti = {
       type: jsPsychHtmlKeyboardResponse,
       stimulus: function() {
-        return renderCorrectFeedback();
+        return renderTrialFeedback();
       },
       choices: "NO_KEYS",
       trial_duration: CONFIG.correctFeedbackDuration,
@@ -1302,8 +1391,9 @@
       <div style="max-width:900px; margin:auto; text-align:center; font-size:26px; line-height:1.7;">
         <h2>Main task</h2>
         <p>Practice is complete.</p>
-        <p>From this point on, your score will count toward your bonus.</p>
-        <p>Earlier correct answers earn more points.</p>
+        <p>Your baseline payment is $10. From this point on, every 250 points earns $1 in bonus pay.</p>
+        <p>If you answer correctly on the first choice, you earn 4 points. If you answer correctly on the fourth choice, you earn 1 point.</p>
+        <p>If your first 4 choices are incorrect, the trial ends and earns 0 points.</p>
         <p>Press any key to begin.</p>
       </div>
     `
@@ -1314,14 +1404,17 @@
       const percentComplete = Math.round((idx / mainTrials.length) * 100);
       timeline.push({
         type: jsPsychHtmlKeyboardResponse,
-        stimulus: `
+        stimulus: function() {
+          return `
           <div style="max-width:900px; margin:auto; text-align:center; font-size:26px; line-height:1.7;">
             <h2>Break</h2>
             <p>You have completed ${percentComplete}% of the main task.</p>
+            <p>You have earned ${experimentState.totalPoints} points so far.</p>
             <p>You may take a short break now.</p>
             <p>Press any key when you are ready to continue.</p>
           </div>
-        `
+          `;
+        }
       });
     }
 
@@ -1342,8 +1435,11 @@
           Congratulations! You earned ${experimentState.totalPoints} points.
         </p>
         <p>Thank you for completing the experiment.</p>
-        <p>Your responses will be downloaded automatically.</p>
-        <p>After exiting full screen, you will be able to see the downloaded file.</p>
+        <p>Your responses will be saved to the experiment server.</p>
+        <p>Please return to MTurk and enter this completion code:</p>
+        <p style="font-size:40px; font-weight:700; letter-spacing:0; color:#222;">
+          ${experimentState.completionCode}
+        </p>
         <p>Press any key to end.</p>
       </div>
       `;
