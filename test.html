@@ -196,6 +196,7 @@
 
   const experimentState = {
     subjectID: "",
+    completionCode: "",
     totalPoints: 0
   };
 
@@ -214,7 +215,110 @@
 
   const jsPsych = initJsPsych({
     on_finish: function() {
-      const csv = jsPsych.data.get().csv();
+      const raw = jsPsych.data.get().values();
+
+      const cleaned = raw.map(row => ({
+        subject_id: experimentState.subjectID || null,
+        completion_code: experimentState.completionCode,
+        pixels_per_mm: row.pixels_per_mm ?? null,
+        mm_per_px: row.mm_per_px ?? null,
+        viewing_distance_mm: row.viewing_distance_mm ?? null,
+        event: row.event ?? null,
+        experiment_elapsed_ms: row.time_elapsed ?? row.system_event_time_ms ?? null,
+        experiment_elapsed_min:
+          row.time_elapsed !== undefined && row.time_elapsed !== null
+            ? (row.time_elapsed / 60000).toFixed(3)
+            : row.system_event_time_ms !== undefined && row.system_event_time_ms !== null
+              ? (row.system_event_time_ms / 60000).toFixed(3)
+              : null,
+        rt: row.rt ?? null,
+        trial_index: row.trial_index ?? null,
+        practice: row.practice ?? null,
+        condition_name: row.condition_name ?? null,
+        stimulus_duration: row.stimulus_duration ?? null,
+        correct_position: row.correct_position ?? null,
+        correct_position_name:
+          row.correct_position !== undefined && row.correct_position !== null
+            ? positionName(row.correct_position)
+            : null,
+        dot_counts: row.dot_counts ?? null,
+        choice_number: row.choice_number ?? null,
+        choice_index: row.choice_index ?? null,
+        choice_position_name:
+          row.choice_index !== undefined && row.choice_index !== null
+            ? positionName(row.choice_index)
+            : null,
+        elapsed_ms_from_trial_start: row.elapsed_ms_from_trial_start ?? null,
+        correct: row.correct ?? null,
+        remaining_options_before_choice: row.remaining_options_before_choice ?? null,
+        points_awarded: row.points_awarded ?? null,
+        total_points: row.total_points ?? null,
+        confidence_choice_correct: row.choice_correct ?? null,
+        confidence_choice_rt: row.choice_rt ?? null,
+        confidence: row.confidence ?? null,
+        system_event_time_ms: row.system_event_time_ms ?? null,
+        system_event_iso_time: row.system_event_iso_time ?? null,
+        window_has_focus: row.window_has_focus ?? null,
+        fullscreen_active: row.fullscreen_active ?? null,
+        document_visibility_state: row.document_visibility_state ?? null,
+        jspsych_interaction_trial: row.jspsych_interaction_trial ?? null,
+        fullscreen_reentry_stage: row.fullscreen_reentry_stage ?? null,
+        fullscreen_success: row.success ?? null
+      }));
+
+      const columns = [
+        "subject_id",
+        "completion_code",
+        "pixels_per_mm",
+        "mm_per_px",
+        "viewing_distance_mm",
+        "event",
+        "experiment_elapsed_ms",
+        "experiment_elapsed_min",
+        "rt",
+        "trial_index",
+        "practice",
+        "condition_name",
+        "stimulus_duration",
+        "correct_position",
+        "correct_position_name",
+        "dot_counts",
+        "choice_number",
+        "choice_index",
+        "choice_position_name",
+        "elapsed_ms_from_trial_start",
+        "correct",
+        "remaining_options_before_choice",
+        "points_awarded",
+        "total_points",
+        "confidence_choice_correct",
+        "confidence_choice_rt",
+        "confidence",
+        "system_event_time_ms",
+        "system_event_iso_time",
+        "window_has_focus",
+        "fullscreen_active",
+        "document_visibility_state",
+        "jspsych_interaction_trial",
+        "fullscreen_reentry_stage",
+        "fullscreen_success"
+      ];
+
+      const escapeCSV = (value) => {
+        if (value === null || value === undefined) return "";
+        const str = String(value);
+        if (str.includes('"') || str.includes(",") || str.includes("\n")) {
+          return '"' + str.replace(/"/g, '""') + '"';
+        }
+        return str;
+      };
+
+      const csvLines = [
+        columns.join(","),
+        ...cleaned.map(row => columns.map(col => escapeCSV(row[col])).join(","))
+      ];
+
+      const csv = csvLines.join("\n");
       const safeSubjectID = (experimentState.subjectID || "unknown").replace(/[^\w-]/g, "");
       const filename = `test_p${safeSubjectID}_${new Date().toISOString().replace(/[:.]/g, "-")}.csv`;
 
@@ -246,6 +350,17 @@
       },
       body: formData.toString()
     });
+  }
+
+  function positionName(index) {
+    const map = {
+      0: "top",
+      1: "upper_left",
+      2: "upper_right",
+      3: "lower_left",
+      4: "lower_right"
+    };
+    return map[index] ?? null;
   }
 
   function shuffle(array) {
@@ -447,6 +562,14 @@
       type: jsPsychCallFunction,
       func: function() {
         initializeTrialState(trialConfig);
+      },
+      data: {
+        event: "initialize_trial",
+        trial_index: trialConfig.trialIndex,
+        practice: trialConfig.practice,
+        condition_name: trialConfig.condition_name,
+        stimulus_duration: trialConfig.duration,
+        correct_position: trialConfig.correctPosition
       }
     };
 
@@ -454,7 +577,15 @@
       type: jsPsychHtmlKeyboardResponse,
       stimulus: `<div class="fixation">+</div>`,
       choices: "NO_KEYS",
-      trial_duration: CONFIG.fixationDuration
+      trial_duration: CONFIG.fixationDuration,
+      data: {
+        event: "fixation",
+        trial_index: trialConfig.trialIndex,
+        practice: trialConfig.practice,
+        condition_name: trialConfig.condition_name,
+        stimulus_duration: trialConfig.duration,
+        correct_position: trialConfig.correctPosition
+      }
     };
 
     const stimulus = {
@@ -463,7 +594,16 @@
         return renderStimulusDisplay(trialConfig);
       },
       choices: "NO_KEYS",
-      trial_duration: trialConfig.duration
+      trial_duration: trialConfig.duration,
+      data: {
+        event: "stimulus",
+        trial_index: trialConfig.trialIndex,
+        practice: trialConfig.practice,
+        condition_name: trialConfig.condition_name,
+        stimulus_duration: trialConfig.duration,
+        correct_position: trialConfig.correctPosition,
+        dot_counts: JSON.stringify(trialConfig.options.map(x => x.nDots))
+      }
     };
 
     const choice = {
@@ -479,17 +619,20 @@
           btn.addEventListener("click", function() {
             const selectedIndex = parseInt(this.dataset.index, 10);
             const rt = Math.round(performance.now() - trialState.choiceScreenStartTime);
+            const elapsedMs = Math.round(performance.now() - trialState.trialStartTime);
             const correct = selectedIndex === trialState.currentTrial.correctPosition;
             jsPsych.finishTrial({
               event: "choice",
               subject_id: experimentState.subjectID,
               trial_index: trialState.currentTrial.trialIndex,
+              practice: trialState.currentTrial.practice,
               condition_name: trialState.currentTrial.condition_name,
               stimulus_duration: trialState.currentTrial.duration,
               correct_position: trialState.currentTrial.correctPosition,
               choice_number: trialState.choiceNumber + 1,
               choice_index: selectedIndex,
               rt,
+              elapsed_ms_from_trial_start: elapsedMs,
               correct,
               remaining_options_before_choice: trialState.available.filter(x => x).length
             });
@@ -525,7 +668,10 @@
               event: "confidence",
               subject_id: experimentState.subjectID,
               trial_index: trialState.currentTrial.trialIndex,
+              practice: trialState.currentTrial.practice,
               condition_name: trialState.currentTrial.condition_name,
+              stimulus_duration: trialState.currentTrial.duration,
+              correct_position: trialState.currentTrial.correctPosition,
               choice_number: trialState.choiceNumber,
               choice_index: trialState.lastChoice,
               choice_correct: trialState.lastChoiceCorrect,
@@ -558,6 +704,11 @@
         trial.data = {
           event: "feedback",
           subject_id: experimentState.subjectID,
+          trial_index: trialConfig.trialIndex,
+          practice: trialConfig.practice,
+          condition_name: trialConfig.condition_name,
+          stimulus_duration: trialConfig.duration,
+          correct_position: trialConfig.correctPosition,
           points_awarded: pointsAwarded,
           total_points: experimentState.totalPoints,
           correct: trialState.lastChoiceCorrect
