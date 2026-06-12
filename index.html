@@ -1436,13 +1436,66 @@
         </p>
         <p>Thank you for completing the experiment.</p>
         <p>Your responses will be saved to the experiment server.</p>
-        <p>Please return to MTurk and enter this completion code:</p>
-        <p style="font-size:40px; font-weight:700; letter-spacing:0; color:#222;">
-          ${experimentState.completionCode}
-        </p>
-        <p>Press any key to end.</p>
+        <p>Please return to MTurk and enter this completion code.</p>
+        <p>Please copy it or write it down before ending this page.</p>
+        <div style="display:flex; justify-content:center; align-items:center; gap:12px; flex-wrap:wrap; margin:18px 0;">
+          <input id="completion-code-input" value="${experimentState.completionCode}" readonly
+            style="font-size:38px; font-weight:700; letter-spacing:0; color:#222; text-align:center; width:280px; padding:8px 12px; border:2px solid #222; border-radius:6px; background:white;" />
+          <button id="copy-completion-code-btn"
+            style="font-size:22px; padding:12px 18px; border:2px solid #222; border-radius:6px; background:white; cursor:pointer;">
+            Copy
+          </button>
+        </div>
+        <div id="completion-copy-status" style="font-size:18px; min-height:26px; color:#178f3c;"></div>
+        <p style="font-size:18px; line-height:1.4;">After saving the code, click the button below to finish the experiment.</p>
+        <button id="finish-experiment-btn"
+          style="font-size:22px; padding:12px 22px; margin-top:12px; border:2px solid #222; border-radius:6px; background:white; cursor:pointer;">
+          I have saved my code
+        </button>
       </div>
       `;
+    },
+    choices: "NO_KEYS",
+    on_load: function() {
+      const input = document.getElementById("completion-code-input");
+      const copyBtn = document.getElementById("copy-completion-code-btn");
+      const finishBtn = document.getElementById("finish-experiment-btn");
+      const status = document.getElementById("completion-copy-status");
+
+      input.focus();
+      input.select();
+
+      function copyCode() {
+        input.focus();
+        input.select();
+
+        const copiedWithClipboard = navigator.clipboard && window.isSecureContext
+          ? navigator.clipboard.writeText(experimentState.completionCode)
+          : Promise.reject(new Error("Clipboard API unavailable"));
+
+        copiedWithClipboard
+          .then(() => {
+            status.textContent = "Copied.";
+          })
+          .catch(() => {
+            try {
+              document.execCommand("copy");
+              status.textContent = "Copied.";
+            } catch (error) {
+              status.textContent = "Please copy or write down the selected code.";
+            }
+          });
+      }
+
+      copyBtn.addEventListener("click", copyCode);
+      finishBtn.addEventListener("click", function() {
+        jsPsych.finishTrial({
+          event: "experiment_end_acknowledged",
+          subject_id: experimentState.subjectID,
+          completion_code: experimentState.completionCode,
+          total_points: experimentState.totalPoints
+        });
+      });
     }
   });
 
