@@ -695,6 +695,9 @@
     totalPoints: 0
   };
 
+  let experimentSavePromise = null;
+  let experimentSaved = false;
+
   const trialState = {
     currentTrial: null,
     available: [],
@@ -759,136 +762,160 @@
       });
     },
     on_finish: function() {
-      const raw = jsPsych.data.get().values().concat(interactionEvents);
-
-      const cleaned = raw.map(row => ({
-        subject_id: experimentState.subjectID || null,
-        completion_code: experimentState.completionCode,
-        consent_name: experimentState.consentName || null,
-        consent_participate: experimentState.consentParticipate || null,
-        consent_data_sharing: experimentState.consentDataSharing || null,
-        consent_date: experimentState.consentDate || null,
-        pixels_per_mm: row.pixels_per_mm ?? null,
-        mm_per_px: row.mm_per_px ?? null,
-        viewing_distance_mm: row.viewing_distance_mm ?? null,
-        event: row.event ?? null,
-        experiment_elapsed_ms: row.time_elapsed ?? row.system_event_time_ms ?? null,
-        experiment_elapsed_min:
-          row.time_elapsed !== undefined && row.time_elapsed !== null
-            ? (row.time_elapsed / 60000).toFixed(3)
-            : row.system_event_time_ms !== undefined && row.system_event_time_ms !== null
-              ? (row.system_event_time_ms / 60000).toFixed(3)
-              : null,
-        rt: row.rt ?? null,
-        trial_index: row.trial_index ?? null,
-        practice: row.practice ?? null,
-        condition_name: row.condition_name ?? null,
-        stimulus_duration: row.stimulus_duration ?? null,
-        correct_position: row.correct_position ?? null,
-        correct_position_name:
-          row.correct_position !== undefined && row.correct_position !== null
-            ? positionName(row.correct_position)
-            : null,
-        dot_counts: row.dot_counts ?? null,
-        choice_number: row.choice_number ?? null,
-        choice_index: row.choice_index ?? null,
-        choice_position_name:
-          row.choice_index !== undefined && row.choice_index !== null
-            ? positionName(row.choice_index)
-            : null,
-        elapsed_ms_from_trial_start: row.elapsed_ms_from_trial_start ?? null,
-        correct: row.correct ?? null,
-        remaining_options_before_choice: row.remaining_options_before_choice ?? null,
-        points_awarded: row.points_awarded ?? null,
-        total_points: row.total_points ?? null,
-        confidence_choice_correct: row.choice_correct ?? null,
-        confidence_choice_rt: row.choice_rt ?? null,
-        confidence: row.confidence ?? null,
-        system_event_time_ms: row.system_event_time_ms ?? null,
-        system_event_iso_time: row.system_event_iso_time ?? null,
-        window_has_focus: row.window_has_focus ?? null,
-        fullscreen_active: row.fullscreen_active ?? null,
-        document_visibility_state: row.document_visibility_state ?? null,
-        jspsych_interaction_trial: row.jspsych_interaction_trial ?? null,
-        fullscreen_reentry_stage: row.fullscreen_reentry_stage ?? null,
-        fullscreen_success: row.success ?? null
-      }));
-
-      const columns = [
-        "subject_id",
-        "completion_code",
-        "consent_name",
-        "consent_participate",
-        "consent_data_sharing",
-        "consent_date",
-        "pixels_per_mm",
-        "mm_per_px",
-        "viewing_distance_mm",
-        "event",
-        "experiment_elapsed_ms",
-        "experiment_elapsed_min",
-        "rt",
-        "trial_index",
-        "practice",
-        "condition_name",
-        "stimulus_duration",
-        "correct_position",
-        "correct_position_name",
-        "dot_counts",
-        "choice_number",
-        "choice_index",
-        "choice_position_name",
-        "elapsed_ms_from_trial_start",
-        "correct",
-        "remaining_options_before_choice",
-        "points_awarded",
-        "total_points",
-        "confidence_choice_correct",
-        "confidence_choice_rt",
-        "confidence",
-        "system_event_time_ms",
-        "system_event_iso_time",
-        "window_has_focus",
-        "fullscreen_active",
-        "document_visibility_state",
-        "jspsych_interaction_trial",
-        "fullscreen_reentry_stage",
-        "fullscreen_success"
-      ];
-
-      const escapeCSV = (value) => {
-        if (value === null || value === undefined) return "";
-        const str = String(value);
-        if (str.includes('"') || str.includes(",") || str.includes("\n")) {
-          return '"' + str.replace(/"/g, '""') + '"';
-        }
-        return str;
-      };
-
-      const csvLines = [
-        columns.join(","),
-        ...cleaned.map(row => columns.map(col => escapeCSV(row[col])).join(","))
-      ];
-
-      const csv = csvLines.join("\n");
-      const safeSubjectID = (experimentState.subjectID || "unknown").replace(/[^\w-]/g, "");
-      const filename = `p${safeSubjectID}_${new Date().toISOString().replace(/[:.]/g, "-")}.csv`;
-
-      saveCSVToServer(filename, csv)
-        .then(response => {
-          if (!response.ok) {
-            throw new Error(`Server returned ${response.status}`);
-          }
-          return response.text();
-        })
-        .then(message => {
-          console.log(message);
-        })
-        .catch(error => {
-          console.error("Could not save data to server:", error);
-        });
+      saveExperimentData().catch(error => {
+        console.error("Could not save data to server:", error);
+      });
     }
   });
+
+  function buildExperimentCSV() {
+    const raw = jsPsych.data.get().values().concat(interactionEvents);
+
+    const cleaned = raw.map(row => ({
+      subject_id: experimentState.subjectID || null,
+      completion_code: experimentState.completionCode,
+      consent_name: experimentState.consentName || null,
+      consent_participate: experimentState.consentParticipate || null,
+      consent_data_sharing: experimentState.consentDataSharing || null,
+      consent_date: experimentState.consentDate || null,
+      pixels_per_mm: row.pixels_per_mm ?? null,
+      mm_per_px: row.mm_per_px ?? null,
+      viewing_distance_mm: row.viewing_distance_mm ?? null,
+      event: row.event ?? null,
+      experiment_elapsed_ms: row.time_elapsed ?? row.system_event_time_ms ?? null,
+      experiment_elapsed_min:
+        row.time_elapsed !== undefined && row.time_elapsed !== null
+          ? (row.time_elapsed / 60000).toFixed(3)
+          : row.system_event_time_ms !== undefined && row.system_event_time_ms !== null
+            ? (row.system_event_time_ms / 60000).toFixed(3)
+            : null,
+      rt: row.rt ?? null,
+      trial_index: row.trial_index ?? null,
+      practice: row.practice ?? null,
+      condition_name: row.condition_name ?? null,
+      stimulus_duration: row.stimulus_duration ?? null,
+      correct_position: row.correct_position ?? null,
+      correct_position_name:
+        row.correct_position !== undefined && row.correct_position !== null
+          ? positionName(row.correct_position)
+          : null,
+      dot_counts: row.dot_counts ?? null,
+      choice_number: row.choice_number ?? null,
+      choice_index: row.choice_index ?? null,
+      choice_position_name:
+        row.choice_index !== undefined && row.choice_index !== null
+          ? positionName(row.choice_index)
+          : null,
+      elapsed_ms_from_trial_start: row.elapsed_ms_from_trial_start ?? null,
+      correct: row.correct ?? null,
+      remaining_options_before_choice: row.remaining_options_before_choice ?? null,
+      points_awarded: row.points_awarded ?? null,
+      total_points: row.total_points ?? null,
+      confidence_choice_correct: row.choice_correct ?? null,
+      confidence_choice_rt: row.choice_rt ?? null,
+      confidence: row.confidence ?? null,
+      system_event_time_ms: row.system_event_time_ms ?? null,
+      system_event_iso_time: row.system_event_iso_time ?? null,
+      window_has_focus: row.window_has_focus ?? null,
+      fullscreen_active: row.fullscreen_active ?? null,
+      document_visibility_state: row.document_visibility_state ?? null,
+      jspsych_interaction_trial: row.jspsych_interaction_trial ?? null,
+      fullscreen_reentry_stage: row.fullscreen_reentry_stage ?? null,
+      fullscreen_success: row.success ?? null
+    }));
+
+    const columns = [
+      "subject_id",
+      "completion_code",
+      "consent_name",
+      "consent_participate",
+      "consent_data_sharing",
+      "consent_date",
+      "pixels_per_mm",
+      "mm_per_px",
+      "viewing_distance_mm",
+      "event",
+      "experiment_elapsed_ms",
+      "experiment_elapsed_min",
+      "rt",
+      "trial_index",
+      "practice",
+      "condition_name",
+      "stimulus_duration",
+      "correct_position",
+      "correct_position_name",
+      "dot_counts",
+      "choice_number",
+      "choice_index",
+      "choice_position_name",
+      "elapsed_ms_from_trial_start",
+      "correct",
+      "remaining_options_before_choice",
+      "points_awarded",
+      "total_points",
+      "confidence_choice_correct",
+      "confidence_choice_rt",
+      "confidence",
+      "system_event_time_ms",
+      "system_event_iso_time",
+      "window_has_focus",
+      "fullscreen_active",
+      "document_visibility_state",
+      "jspsych_interaction_trial",
+      "fullscreen_reentry_stage",
+      "fullscreen_success"
+    ];
+
+    const escapeCSV = (value) => {
+      if (value === null || value === undefined) return "";
+      const str = String(value);
+      if (str.includes('"') || str.includes(",") || str.includes("\n")) {
+        return '"' + str.replace(/"/g, '""') + '"';
+      }
+      return str;
+    };
+
+    const csvLines = [
+      columns.join(","),
+      ...cleaned.map(row => columns.map(col => escapeCSV(row[col])).join(","))
+    ];
+
+    const csv = csvLines.join("\n");
+    const safeSubjectID = (experimentState.subjectID || "unknown").replace(/[^\w-]/g, "");
+    const filename = `p${safeSubjectID}_${new Date().toISOString().replace(/[:.]/g, "-")}.csv`;
+
+    return { filename, csv };
+  }
+
+  function saveExperimentData() {
+    if (experimentSaved) {
+      return Promise.resolve("Data already saved.");
+    }
+
+    if (experimentSavePromise) {
+      return experimentSavePromise;
+    }
+
+    const { filename, csv } = buildExperimentCSV();
+    experimentSavePromise = saveCSVToServer(filename, csv)
+      .then(response => {
+        if (!response.ok) {
+          throw new Error(`Server returned ${response.status}`);
+        }
+        return response.text();
+      })
+      .then(message => {
+        experimentSaved = true;
+        console.log(message);
+        return message;
+      })
+      .catch(error => {
+        experimentSavePromise = null;
+        throw error;
+      });
+
+    return experimentSavePromise;
+  }
 
   function isFullscreenActive() {
     return Boolean(
@@ -1548,11 +1575,56 @@
       <div style="max-width:900px; margin:auto; text-align:center; font-size:28px; line-height:1.7;">
         <h2>Finished</h2>
         <p>The experiment is complete.</p>
-        <p>Thank you for participating. You may now close this window.</p>
-        <p>Your credit will be sent soon.</p>
+        <p>Please submit your responses before closing this window.</p>
+        <button id="save-experiment-btn"
+          style="font-size:22px; padding:12px 22px; margin-top:12px; border:2px solid #222; border-radius:6px; background:white; cursor:pointer;">
+          Submit responses
+        </button>
+        <div id="save-experiment-status" style="font-size:20px; min-height:32px; margin-top:18px; color:#222;"></div>
+        <p id="save-experiment-close-message" style="display:none;">Thank you for participating. Your responses have been saved, and you may now close this window.</p>
+        <p id="save-experiment-credit-message" style="display:none;">Your credit will be sent soon.</p>
         <p>Please send an email to bsong91@gatech.edu if you didn't receive it in a week.</p>
       </div>
       `;
+    },
+    choices: "NO_KEYS",
+    on_load: function() {
+      const saveBtn = document.getElementById("save-experiment-btn");
+      const status = document.getElementById("save-experiment-status");
+      const closeMessage = document.getElementById("save-experiment-close-message");
+      const creditMessage = document.getElementById("save-experiment-credit-message");
+
+      function preventCloseUntilSaved(event) {
+        if (experimentSaved) return;
+        event.preventDefault();
+        event.returnValue = "";
+      }
+
+      window.addEventListener("beforeunload", preventCloseUntilSaved);
+
+      saveBtn.addEventListener("click", function() {
+        saveBtn.disabled = true;
+        saveBtn.style.cursor = "not-allowed";
+        status.style.color = "#222";
+        status.textContent = "Saving responses. Please do not close this window.";
+
+        saveExperimentData()
+          .then(() => {
+            status.style.color = "#178f3c";
+            status.textContent = "Responses saved successfully.";
+            saveBtn.style.display = "none";
+            closeMessage.style.display = "block";
+            creditMessage.style.display = "block";
+            window.removeEventListener("beforeunload", preventCloseUntilSaved);
+          })
+          .catch(error => {
+            console.error("Could not save data to server:", error);
+            saveBtn.disabled = false;
+            saveBtn.style.cursor = "pointer";
+            status.style.color = "#b00020";
+            status.textContent = "Responses were not saved. Please try again before closing this window.";
+          });
+      });
     }
   });
 
