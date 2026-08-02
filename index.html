@@ -202,6 +202,30 @@
       font-size: 18px;
       min-height: 24px;
     }
+
+    .consent-wrap {
+      max-width: 980px;
+      margin: 30px auto;
+      text-align: left;
+      font-size: 18px;
+      line-height: 1.5;
+    }
+
+    .consent-frame {
+      width: 100%;
+      height: 560px;
+      border: 2px solid #222;
+      box-sizing: border-box;
+      margin: 12px 0 18px 0;
+    }
+
+    .consent-btn {
+      display: block;
+      font-size: 22px;
+      padding: 10px 22px;
+      margin: 14px auto 0 auto;
+      cursor: pointer;
+    }
   </style>
 </head>
 <body></body>
@@ -227,7 +251,10 @@
     practiceEasyStep: 12,
     mainRepeatsPerCondition: 60,
     mainTrialsPerBlock: 40,
-    attentionCheckInterval: 80
+    attentionCheckInterval: 80,
+    baselineCompensationDollars: 12,
+    bonusPointsPerUnit: 200,
+    bonusDollarsPerUnit: 0.50
   };
 
   const DOT_COUNT_CONDITION_PATTERNS = [
@@ -510,6 +537,15 @@
     return pointsByAttempt[attemptNumber - 1] ?? 0;
   }
 
+  function getBonusDollars(totalPoints) {
+    const completedBonusUnits = Math.floor(totalPoints / CONFIG.bonusPointsPerUnit);
+    return completedBonusUnits * CONFIG.bonusDollarsPerUnit;
+  }
+
+  function getTotalCompensationDollars(totalPoints) {
+    return CONFIG.baselineCompensationDollars + getBonusDollars(totalPoints);
+  }
+
   function renderTrialFeedback() {
     const wasCorrect = trialState.lastChoiceCorrect;
     const pointsLine = trialState.currentTrial?.practice ||
@@ -660,8 +696,13 @@
   const experimentState = {
     subjectID: "",
     completionCode: generateCompletionCode(),
+    consentParticipate: "",
+    consentDate: "",
     totalPoints: 0
   };
+
+  let experimentSavePromise = null;
+  let experimentSaved = false;
 
   const trialState = {
     currentTrial: null,
@@ -727,128 +768,168 @@
       });
     },
     on_finish: function() {
-      const raw = jsPsych.data.get().values().concat(interactionEvents);
-
-      const cleaned = raw.map(row => ({
-        subject_id: experimentState.subjectID || null,
-        completion_code: experimentState.completionCode,
-        pixels_per_mm: row.pixels_per_mm ?? null,
-        mm_per_px: row.mm_per_px ?? null,
-        viewing_distance_mm: row.viewing_distance_mm ?? null,
-        event: row.event ?? null,
-        experiment_elapsed_ms: row.time_elapsed ?? row.system_event_time_ms ?? null,
-        experiment_elapsed_min:
-          row.time_elapsed !== undefined && row.time_elapsed !== null
-            ? (row.time_elapsed / 60000).toFixed(3)
-            : row.system_event_time_ms !== undefined && row.system_event_time_ms !== null
-              ? (row.system_event_time_ms / 60000).toFixed(3)
-              : null,
-        rt: row.rt ?? null,
-        trial_index: row.trial_index ?? null,
-        practice: row.practice ?? null,
-        condition_name: row.condition_name ?? null,
-        stimulus_duration: row.stimulus_duration ?? null,
-        correct_position: row.correct_position ?? null,
-        correct_position_name:
-          row.correct_position !== undefined && row.correct_position !== null
-            ? positionName(row.correct_position)
-            : null,
-        dot_counts: row.dot_counts ?? null,
-        choice_number: row.choice_number ?? null,
-        choice_index: row.choice_index ?? null,
-        choice_position_name:
-          row.choice_index !== undefined && row.choice_index !== null
-            ? positionName(row.choice_index)
-            : null,
-        elapsed_ms_from_trial_start: row.elapsed_ms_from_trial_start ?? null,
-        correct: row.correct ?? null,
-        remaining_options_before_choice: row.remaining_options_before_choice ?? null,
-        points_awarded: row.points_awarded ?? null,
-        total_points: row.total_points ?? null,
-        confidence_choice_correct: row.choice_correct ?? null,
-        confidence_choice_rt: row.choice_rt ?? null,
-        confidence: row.confidence ?? null,
-        system_event_time_ms: row.system_event_time_ms ?? null,
-        system_event_iso_time: row.system_event_iso_time ?? null,
-        window_has_focus: row.window_has_focus ?? null,
-        fullscreen_active: row.fullscreen_active ?? null,
-        document_visibility_state: row.document_visibility_state ?? null,
-        jspsych_interaction_trial: row.jspsych_interaction_trial ?? null,
-        fullscreen_reentry_stage: row.fullscreen_reentry_stage ?? null,
-        fullscreen_success: row.success ?? null
-      }));
-
-      const columns = [
-        "subject_id",
-        "completion_code",
-        "pixels_per_mm",
-        "mm_per_px",
-        "viewing_distance_mm",
-        "event",
-        "experiment_elapsed_ms",
-        "experiment_elapsed_min",
-        "rt",
-        "trial_index",
-        "practice",
-        "condition_name",
-        "stimulus_duration",
-        "correct_position",
-        "correct_position_name",
-        "dot_counts",
-        "choice_number",
-        "choice_index",
-        "choice_position_name",
-        "elapsed_ms_from_trial_start",
-        "correct",
-        "remaining_options_before_choice",
-        "points_awarded",
-        "total_points",
-        "confidence_choice_correct",
-        "confidence_choice_rt",
-        "confidence",
-        "system_event_time_ms",
-        "system_event_iso_time",
-        "window_has_focus",
-        "fullscreen_active",
-        "document_visibility_state",
-        "jspsych_interaction_trial",
-        "fullscreen_reentry_stage",
-        "fullscreen_success"
-      ];
-
-      const escapeCSV = (value) => {
-        if (value === null || value === undefined) return "";
-        const str = String(value);
-        if (str.includes('"') || str.includes(",") || str.includes("\n")) {
-          return '"' + str.replace(/"/g, '""') + '"';
-        }
-        return str;
-      };
-
-      const csvLines = [
-        columns.join(","),
-        ...cleaned.map(row => columns.map(col => escapeCSV(row[col])).join(","))
-      ];
-
-      const csv = csvLines.join("\n");
-      const safeSubjectID = (experimentState.subjectID || "unknown").replace(/[^\w-]/g, "");
-      const filename = `p${safeSubjectID}_${new Date().toISOString().replace(/[:.]/g, "-")}.csv`;
-
-      saveCSVToServer(filename, csv)
-        .then(response => {
-          if (!response.ok) {
-            throw new Error(`Server returned ${response.status}`);
-          }
-          return response.text();
-        })
-        .then(message => {
-          console.log(message);
-        })
-        .catch(error => {
-          console.error("Could not save data to server:", error);
-        });
+      saveExperimentData().catch(error => {
+        console.error("Could not save data to server:", error);
+      });
     }
   });
+
+  function buildExperimentCSV() {
+    const raw = jsPsych.data.get().values().concat(interactionEvents);
+
+    const cleaned = raw.map(row => ({
+      subject_id: experimentState.subjectID || null,
+      completion_code: experimentState.completionCode,
+      consent_participate: experimentState.consentParticipate || null,
+      consent_date: experimentState.consentDate || null,
+      baseline_compensation_dollars: CONFIG.baselineCompensationDollars,
+      bonus_points_per_unit: CONFIG.bonusPointsPerUnit,
+      bonus_dollars_per_unit: CONFIG.bonusDollarsPerUnit,
+      final_total_points: experimentState.totalPoints,
+      bonus_earned_dollars: getBonusDollars(experimentState.totalPoints).toFixed(2),
+      total_compensation_dollars: getTotalCompensationDollars(experimentState.totalPoints).toFixed(2),
+      pixels_per_mm: row.pixels_per_mm ?? null,
+      mm_per_px: row.mm_per_px ?? null,
+      viewing_distance_mm: row.viewing_distance_mm ?? null,
+      event: row.event ?? null,
+      experiment_elapsed_ms: row.time_elapsed ?? row.system_event_time_ms ?? null,
+      experiment_elapsed_min:
+        row.time_elapsed !== undefined && row.time_elapsed !== null
+          ? (row.time_elapsed / 60000).toFixed(3)
+          : row.system_event_time_ms !== undefined && row.system_event_time_ms !== null
+            ? (row.system_event_time_ms / 60000).toFixed(3)
+            : null,
+      rt: row.rt ?? null,
+      trial_index: row.trial_index ?? null,
+      practice: row.practice ?? null,
+      condition_name: row.condition_name ?? null,
+      stimulus_duration: row.stimulus_duration ?? null,
+      correct_position: row.correct_position ?? null,
+      correct_position_name:
+        row.correct_position !== undefined && row.correct_position !== null
+          ? positionName(row.correct_position)
+          : null,
+      dot_counts: row.dot_counts ?? null,
+      choice_number: row.choice_number ?? null,
+      choice_index: row.choice_index ?? null,
+      choice_position_name:
+        row.choice_index !== undefined && row.choice_index !== null
+          ? positionName(row.choice_index)
+          : null,
+      elapsed_ms_from_trial_start: row.elapsed_ms_from_trial_start ?? null,
+      correct: row.correct ?? null,
+      remaining_options_before_choice: row.remaining_options_before_choice ?? null,
+      points_awarded: row.points_awarded ?? null,
+      total_points: row.total_points ?? null,
+      confidence_choice_correct: row.choice_correct ?? null,
+      confidence_choice_rt: row.choice_rt ?? null,
+      confidence: row.confidence ?? null,
+      system_event_time_ms: row.system_event_time_ms ?? null,
+      system_event_iso_time: row.system_event_iso_time ?? null,
+      window_has_focus: row.window_has_focus ?? null,
+      fullscreen_active: row.fullscreen_active ?? null,
+      document_visibility_state: row.document_visibility_state ?? null,
+      jspsych_interaction_trial: row.jspsych_interaction_trial ?? null,
+      fullscreen_reentry_stage: row.fullscreen_reentry_stage ?? null,
+      fullscreen_success: row.success ?? null
+    }));
+
+    const columns = [
+      "subject_id",
+      "completion_code",
+      "consent_participate",
+      "consent_date",
+      "baseline_compensation_dollars",
+      "bonus_points_per_unit",
+      "bonus_dollars_per_unit",
+      "final_total_points",
+      "bonus_earned_dollars",
+      "total_compensation_dollars",
+      "pixels_per_mm",
+      "mm_per_px",
+      "viewing_distance_mm",
+      "event",
+      "experiment_elapsed_ms",
+      "experiment_elapsed_min",
+      "rt",
+      "trial_index",
+      "practice",
+      "condition_name",
+      "stimulus_duration",
+      "correct_position",
+      "correct_position_name",
+      "dot_counts",
+      "choice_number",
+      "choice_index",
+      "choice_position_name",
+      "elapsed_ms_from_trial_start",
+      "correct",
+      "remaining_options_before_choice",
+      "points_awarded",
+      "total_points",
+      "confidence_choice_correct",
+      "confidence_choice_rt",
+      "confidence",
+      "system_event_time_ms",
+      "system_event_iso_time",
+      "window_has_focus",
+      "fullscreen_active",
+      "document_visibility_state",
+      "jspsych_interaction_trial",
+      "fullscreen_reentry_stage",
+      "fullscreen_success"
+    ];
+
+    const escapeCSV = (value) => {
+      if (value === null || value === undefined) return "";
+      const str = String(value);
+      if (str.includes('"') || str.includes(",") || str.includes("\n")) {
+        return '"' + str.replace(/"/g, '""') + '"';
+      }
+      return str;
+    };
+
+    const csvLines = [
+      columns.join(","),
+      ...cleaned.map(row => columns.map(col => escapeCSV(row[col])).join(","))
+    ];
+
+    const csv = csvLines.join("\n");
+    const safeSubjectID = (experimentState.subjectID || "unknown").replace(/[^\w-]/g, "");
+    const filename = `p${safeSubjectID}_${new Date().toISOString().replace(/[:.]/g, "-")}.csv`;
+
+    return { filename, csv };
+  }
+
+  function saveExperimentData() {
+    if (experimentSaved) {
+      return Promise.resolve("Data already saved.");
+    }
+
+    if (experimentSavePromise) {
+      return experimentSavePromise;
+    }
+
+    const { filename, csv } = buildExperimentCSV();
+    experimentSavePromise = saveCSVToServer(filename, csv)
+      .then(response => {
+        if (!response.ok) {
+          throw new Error(`Server returned ${response.status}`);
+        }
+        return response.text();
+      })
+      .then(message => {
+        experimentSaved = true;
+        console.log(message);
+        return message;
+      })
+      .catch(error => {
+        experimentSavePromise = null;
+        throw error;
+      });
+
+    return experimentSavePromise;
+  }
 
   function isFullscreenActive() {
     return Boolean(
@@ -862,7 +943,46 @@
   const timeline = [];
 
   /*************************
-   * 8. SUBJECT ID SCREEN  *
+   * 8. CONSENT SCREEN     *
+   *************************/
+  const consentScreen = {
+    type: jsPsychHtmlKeyboardResponse,
+    stimulus: `
+      <div class="consent-wrap">
+        <h2 style="text-align:center;">Consent Form</h2>
+        <p>Please review the consent form before starting the study.</p>
+        <p>
+          If the PDF does not display below,
+          <a href="Consent_online_study.pdf" target="_blank" rel="noopener">open the consent form in a new tab</a>.
+        </p>
+        <iframe class="consent-frame" src="Consent_online_study.pdf#page=1"></iframe>
+        <p style="text-align:center;">
+          By clicking the button below and beginning the study, you indicate your consent to participate.
+        </p>
+        <button id="consent-btn" class="consent-btn">I agree and want to begin</button>
+      </div>
+    `,
+    choices: "NO_KEYS",
+    on_load: function() {
+      const btn = document.getElementById("consent-btn");
+
+      btn.addEventListener("click", function() {
+        const consentDate = new Date().toISOString();
+        experimentState.consentParticipate = "yes";
+        experimentState.consentDate = consentDate;
+
+        jsPsych.finishTrial({
+          event: "consent",
+          consent_participate: "yes",
+          consent_date: consentDate
+        });
+      });
+    }
+  };
+  timeline.push(consentScreen);
+
+  /*************************
+   * 9. SUBJECT ID SCREEN  *
    *************************/
   const subjectIDScreen = {
     type: jsPsychHtmlKeyboardResponse,
@@ -908,9 +1028,9 @@
   };
   timeline.push(subjectIDScreen);
 
-  /************************************
-   * 9. SCREEN / VIEWING CALIBRATION  *
-   ************************************/
+  /*************************************
+   * 10. SCREEN / VIEWING CALIBRATION  *
+   *************************************/
   const calibrationIntro = {
     type: jsPsychInstructions,
     pages: [
@@ -974,7 +1094,7 @@
   });
 
   /***********************
-   * 10. INSTRUCTIONS    *
+   * 11. INSTRUCTIONS    *
    ***********************/
   const instructions = {
     type: jsPsychInstructions,
@@ -1007,10 +1127,10 @@
       `
       <div style="max-width:900px; margin:auto; text-align:left; font-size:22px; line-height:1.6;">
         <h2>Points and bonus</h2>
-        <p>Your baseline payment is <strong>$10</strong>.</p>
-        <p>In the main task, you will earn <strong>$1 in bonus pay for every 250 points</strong>.</p>
+        <p>Your baseline compensation is <strong>$12</strong>.</p>
+        <p>In the main task, you will earn <strong>$0.50 in bonus pay for every 200 points</strong>.</p>
         <p>Only main task trials count toward your bonus.</p>
-        <p>In the main task, if you answer correctly on the first choice, you earn <strong>4 points</strong>. If you answer correctly on the fourth choice, you earn <strong>1 point</strong>.</p>
+        <p>In the main task, a correct answer on the first, second, third, or fourth choice earns <strong>4, 3, 2, or 1 point(s)</strong>, respectively.</p>
         <p>If none of your first 4 choices is correct, the trial ends and earns <strong>0 points</strong>.</p>
       </div>
       `
@@ -1020,7 +1140,7 @@
   timeline.push(instructions);
 
   /**********************************
-   * 11. DISPLAY RENDER FUNCTIONS   *
+   * 12. DISPLAY RENDER FUNCTIONS   *
    **********************************/
   function isMainTaskTrial(trialConfig) {
     return Boolean(trialConfig && !trialConfig.practice && !trialConfig.attentionCheck);
@@ -1143,7 +1263,7 @@
   }
 
   /**************************
-   * 12. GENERIC TRIAL PIECES
+   * 13. GENERIC TRIAL PIECES
    **************************/
   function makeFullscreenRecoveryTrial(trialConfig, stageName) {
     return {
@@ -1365,7 +1485,7 @@
   }
 
   /***********************
-   * 13. BUILD TIMELINE  *
+   * 14. BUILD TIMELINE  *
    ***********************/
   practiceBlocks.forEach(block => {
     timeline.push({
@@ -1391,8 +1511,8 @@
       <div style="max-width:900px; margin:auto; text-align:center; font-size:26px; line-height:1.7;">
         <h2>Main task</h2>
         <p>Practice is complete.</p>
-        <p>Your baseline payment is $10. From this point on, every 250 points earns $1 in bonus pay.</p>
-        <p>If you answer correctly on the first choice, you earn 4 points. If you answer correctly on the fourth choice, you earn 1 point.</p>
+        <p>Your baseline compensation is $12. From this point on, every 200 points earns $0.50 in bonus pay.</p>
+        <p>A correct answer on the first, second, third, or fourth choice earns 4, 3, 2, or 1 point(s), respectively.</p>
         <p>If your first 4 choices are incorrect, the trial ends and earns 0 points.</p>
         <p>Press any key to begin.</p>
       </div>
@@ -1434,36 +1554,54 @@
         <p style="font-size:34px; font-weight:700; color:#178f3c;">
           Congratulations! You earned ${experimentState.totalPoints} points.
         </p>
+        <p>You earned <strong>$${getBonusDollars(experimentState.totalPoints).toFixed(2)}</strong> in bonus pay.</p>
+        <p>Your total compensation is <strong>$${getTotalCompensationDollars(experimentState.totalPoints).toFixed(2)}</strong>, including the $12 baseline compensation.</p>
         <p>Thank you for completing the experiment.</p>
-        <p>Your responses will be saved to the experiment server.</p>
-        <p>Please return to MTurk and enter this completion code.</p>
-        <p>Please copy it or write it down before ending this page.</p>
-        <div style="display:flex; justify-content:center; align-items:center; gap:12px; flex-wrap:wrap; margin:18px 0;">
-          <input id="completion-code-input" value="${experimentState.completionCode}" readonly
-            style="font-size:38px; font-weight:700; letter-spacing:0; color:#222; text-align:center; width:280px; padding:8px 12px; border:2px solid #222; border-radius:6px; background:white;" />
-          <button id="copy-completion-code-btn"
-            style="font-size:22px; padding:12px 18px; border:2px solid #222; border-radius:6px; background:white; cursor:pointer;">
-            Copy
+        <p>Please submit your responses. Your MTurk completion code will appear only after the server confirms that your data were saved.</p>
+        <button id="save-experiment-btn"
+          style="font-size:22px; padding:12px 22px; margin-top:12px; border:2px solid #222; border-radius:6px; background:white; cursor:pointer;">
+          Submit responses
+        </button>
+        <div id="save-experiment-status" style="font-size:20px; min-height:32px; margin-top:18px; color:#222;"></div>
+
+        <div id="completion-code-wrap" style="display:none;">
+          <p>Your responses were saved successfully.</p>
+          <p>Please return to MTurk and enter this completion code:</p>
+          <div style="display:flex; justify-content:center; align-items:center; gap:12px; flex-wrap:wrap; margin:18px 0;">
+            <input id="completion-code-input" value="" readonly
+              style="font-size:38px; font-weight:700; letter-spacing:0; color:#222; text-align:center; width:280px; padding:8px 12px; border:2px solid #222; border-radius:6px; background:white;" />
+            <button id="copy-completion-code-btn"
+              style="font-size:22px; padding:12px 18px; border:2px solid #222; border-radius:6px; background:white; cursor:pointer;">
+              Copy
+            </button>
+          </div>
+          <div id="completion-copy-status" style="font-size:18px; min-height:26px; color:#178f3c;"></div>
+          <p style="font-size:18px; line-height:1.4;">After saving the code, click the button below to finish the experiment.</p>
+          <button id="finish-experiment-btn"
+            style="font-size:22px; padding:12px 22px; margin-top:12px; border:2px solid #222; border-radius:6px; background:white; cursor:pointer;">
+            I have saved my code
           </button>
         </div>
-        <div id="completion-copy-status" style="font-size:18px; min-height:26px; color:#178f3c;"></div>
-        <p style="font-size:18px; line-height:1.4;">After saving the code, click the button below to finish the experiment.</p>
-        <button id="finish-experiment-btn"
-          style="font-size:22px; padding:12px 22px; margin-top:12px; border:2px solid #222; border-radius:6px; background:white; cursor:pointer;">
-          I have saved my code
-        </button>
       </div>
       `;
     },
     choices: "NO_KEYS",
     on_load: function() {
+      const saveBtn = document.getElementById("save-experiment-btn");
+      const saveStatus = document.getElementById("save-experiment-status");
+      const codeWrap = document.getElementById("completion-code-wrap");
       const input = document.getElementById("completion-code-input");
       const copyBtn = document.getElementById("copy-completion-code-btn");
       const finishBtn = document.getElementById("finish-experiment-btn");
-      const status = document.getElementById("completion-copy-status");
+      const copyStatus = document.getElementById("completion-copy-status");
 
-      input.focus();
-      input.select();
+      function preventCloseUntilSaved(event) {
+        if (experimentSaved) return;
+        event.preventDefault();
+        event.returnValue = "";
+      }
+
+      window.addEventListener("beforeunload", preventCloseUntilSaved);
 
       function copyCode() {
         input.focus();
@@ -1475,17 +1613,43 @@
 
         copiedWithClipboard
           .then(() => {
-            status.textContent = "Copied.";
+            copyStatus.textContent = "Copied.";
           })
           .catch(() => {
             try {
               document.execCommand("copy");
-              status.textContent = "Copied.";
+              copyStatus.textContent = "Copied.";
             } catch (error) {
-              status.textContent = "Please copy or write down the selected code.";
+              copyStatus.textContent = "Please copy or write down the selected code.";
             }
           });
       }
+
+      saveBtn.addEventListener("click", function() {
+        saveBtn.disabled = true;
+        saveBtn.style.cursor = "not-allowed";
+        saveStatus.style.color = "#222";
+        saveStatus.textContent = "Saving responses. Please do not close this window.";
+
+        saveExperimentData()
+          .then(() => {
+            saveStatus.style.color = "#178f3c";
+            saveStatus.textContent = "Responses saved successfully.";
+            saveBtn.style.display = "none";
+            codeWrap.style.display = "block";
+            input.value = experimentState.completionCode;
+            input.focus();
+            input.select();
+            window.removeEventListener("beforeunload", preventCloseUntilSaved);
+          })
+          .catch(error => {
+            console.error("Could not save data to server:", error);
+            saveBtn.disabled = false;
+            saveBtn.style.cursor = "pointer";
+            saveStatus.style.color = "#b00020";
+            saveStatus.textContent = "Responses were not saved. Please try again before closing this window.";
+          });
+      });
 
       copyBtn.addEventListener("click", copyCode);
       finishBtn.addEventListener("click", function() {
@@ -1500,7 +1664,7 @@
   });
 
   /***********************
-   * 14. RUN EXPERIMENT  *
+   * 15. RUN EXPERIMENT  *
    ***********************/
   jsPsych.run(timeline);
 </script>
