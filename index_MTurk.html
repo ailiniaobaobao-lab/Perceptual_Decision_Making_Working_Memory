@@ -1047,6 +1047,11 @@
           If the PDF does not display below,
           <a href="Consent_online_study_MTurk.pdf" target="_blank" rel="noopener">open the consent form in a new tab</a>.
         </p>
+        <p>
+          For technical or payment questions, contact
+          <a href="mailto:gt.perception@gmail.com">gt.perception@gmail.com</a>.
+          Please include your MTurk Worker ID, but do not include your study responses.
+        </p>
         <iframe class="consent-frame" src="Consent_online_study_MTurk.pdf#page=1"></iframe>
         <p style="text-align:center;">
           By clicking the button below and beginning the study, you indicate your consent to participate.
@@ -1678,6 +1683,11 @@
         <p>You earned <strong>$${getBonusDollars(experimentState.totalPoints).toFixed(2)}</strong> in bonus pay.</p>
         <p>Your total compensation is <strong>$${getTotalCompensationDollars(experimentState.totalPoints).toFixed(2)}</strong>, including the $12 baseline compensation.</p>
         <p>Thank you for completing the experiment.</p>
+        <p style="font-size:18px; line-height:1.5;">
+          For technical or payment questions, contact
+          <a href="mailto:gt.perception@gmail.com">gt.perception@gmail.com</a>.
+          Please include your MTurk Worker ID, but do not include your study responses.
+        </p>
         <p>Please submit your responses. Your MTurk completion code will appear only after the server confirms that your data were saved.</p>
         <button id="save-experiment-btn"
           style="font-size:22px; padding:12px 22px; margin-top:12px; border:2px solid #222; border-radius:6px; background:white; cursor:pointer;">
@@ -1768,7 +1778,9 @@
             saveBtn.disabled = false;
             saveBtn.style.cursor = "pointer";
             saveStatus.style.color = "#b00020";
-            saveStatus.textContent = "Responses were not saved. Please try again before closing this window.";
+            saveStatus.innerHTML = "Responses were not saved. Please try again before closing this window. " +
+              "If the problem continues, contact <a href=\"mailto:gt.perception@gmail.com\">gt.perception@gmail.com</a> " +
+              "and include your MTurk Worker ID, but do not include your study responses.";
           });
       });
 
