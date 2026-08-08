@@ -253,6 +253,7 @@
     mainTrialsPerBlock: 40,
     attentionCheckInterval: 80,
     baselineCompensationDollars: 12,
+    mturkBaseRewardDollars: 9.50,
     bonusPointsPerUnit: 200,
     bonusDollarsPerUnit: 0.50
   };
@@ -329,21 +330,6 @@
     formData.append("csvdata", text);
 
     return fetch("save_data_MTurk.php", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/x-www-form-urlencoded"
-      },
-      body: formData.toString()
-    });
-  }
-
-  function savePaymentRecordToServer(record) {
-    const formData = new URLSearchParams();
-    Object.entries(record).forEach(([key, value]) => {
-      formData.append(key, value ?? "");
-    });
-
-    return fetch("save_payment_MTurk.php", {
       method: "POST",
       headers: {
         "Content-Type": "application/x-www-form-urlencoded"
@@ -579,6 +565,10 @@
     return CONFIG.baselineCompensationDollars + getBonusDollars(totalPoints);
   }
 
+  function getManualBonusToPayDollars(totalPoints) {
+    return getTotalCompensationDollars(totalPoints) - CONFIG.mturkBaseRewardDollars;
+  }
+
   function renderTrialFeedback() {
     const wasCorrect = trialState.lastChoiceCorrect;
     const pointsLine = trialState.currentTrial?.practice ||
@@ -791,7 +781,7 @@
       interactionEvents.push({
         event: eventNameMap[data.event],
         time_elapsed: data.time ?? Math.round(performance.now()),
-        trial_index: currentTrial?.trialIndex ?? null,
+        task_trial_index: currentTrial?.trialIndex ?? null,
         practice: currentTrial?.practice ?? null,
         condition_name: currentTrial?.condition_name ?? null,
         stimulus_duration: currentTrial?.duration ?? null,
@@ -829,15 +819,19 @@
 
     const cleaned = raw.map(row => ({
       study_id: experimentState.studyID,
+      worker_id: experimentState.workerID,
+      completion_code: experimentState.completionCode,
       consent_participate: experimentState.consentParticipate || null,
       consent_date: experimentState.consentDate || null,
       us_location_confirmed: experimentState.usLocationConfirmed || null,
       baseline_compensation_dollars: CONFIG.baselineCompensationDollars,
+      mturk_base_reward_dollars: CONFIG.mturkBaseRewardDollars.toFixed(2),
       bonus_points_per_unit: CONFIG.bonusPointsPerUnit,
       bonus_dollars_per_unit: CONFIG.bonusDollarsPerUnit,
       final_total_points: experimentState.totalPoints,
       bonus_earned_dollars: getBonusDollars(experimentState.totalPoints).toFixed(2),
       total_compensation_dollars: getTotalCompensationDollars(experimentState.totalPoints).toFixed(2),
+      manual_bonus_to_pay_dollars: getManualBonusToPayDollars(experimentState.totalPoints).toFixed(2),
       final_experiment_elapsed_ms: finalExperimentElapsedMs,
       final_experiment_elapsed_min: (finalExperimentElapsedMs / 60000).toFixed(3),
       voluntary_break_total_ms: Math.round(voluntaryBreakTotalMs),
@@ -856,7 +850,8 @@
             ? (row.system_event_time_ms / 60000).toFixed(3)
             : null,
       rt: row.rt ?? null,
-      trial_index: row.trial_index ?? null,
+      task_trial_index: row.task_trial_index ?? null,
+      jspsych_trial_index: row.trial_index ?? null,
       practice: row.practice ?? null,
       condition_name: row.condition_name ?? null,
       stimulus_duration: row.stimulus_duration ?? null,
@@ -892,15 +887,19 @@
 
     const columns = [
       "study_id",
+      "worker_id",
+      "completion_code",
       "consent_participate",
       "consent_date",
       "us_location_confirmed",
       "baseline_compensation_dollars",
+      "mturk_base_reward_dollars",
       "bonus_points_per_unit",
       "bonus_dollars_per_unit",
       "final_total_points",
       "bonus_earned_dollars",
       "total_compensation_dollars",
+      "manual_bonus_to_pay_dollars",
       "final_experiment_elapsed_ms",
       "final_experiment_elapsed_min",
       "voluntary_break_total_ms",
@@ -914,7 +913,8 @@
       "experiment_elapsed_ms",
       "experiment_elapsed_min",
       "rt",
-      "trial_index",
+      "task_trial_index",
+      "jspsych_trial_index",
       "practice",
       "condition_name",
       "stimulus_duration",
@@ -963,24 +963,6 @@
     return { filename, csv };
   }
 
-  function buildPaymentRecord() {
-    return {
-      study_id: experimentState.studyID,
-      worker_id: experimentState.workerID,
-      mturk_url_worker_id: mturkContext.workerID,
-      assignment_id: mturkContext.assignmentID,
-      hit_id: mturkContext.hitID,
-      completion_code: experimentState.completionCode,
-      consent_participate: experimentState.consentParticipate,
-      consent_date: experimentState.consentDate,
-      us_location_confirmed: experimentState.usLocationConfirmed,
-      final_total_points: experimentState.totalPoints,
-      bonus_earned_dollars: getBonusDollars(experimentState.totalPoints).toFixed(2),
-      total_compensation_dollars: getTotalCompensationDollars(experimentState.totalPoints).toFixed(2),
-      client_saved_at: new Date().toISOString()
-    };
-  }
-
   function saveExperimentData() {
     if (experimentSaved) {
       return Promise.resolve("Data already saved.");
@@ -991,7 +973,6 @@
     }
 
     const { filename, csv } = buildExperimentCSV();
-    const paymentRecord = buildPaymentRecord();
     experimentSavePromise = saveCSVToServer(filename, csv)
       .then(response => {
         if (!response.ok) {
@@ -1000,20 +981,9 @@
         return response.text();
       })
       .then(dataMessage => {
-        return savePaymentRecordToServer(paymentRecord)
-          .then(response => {
-            if (!response.ok) {
-              throw new Error(`Payment-record server returned ${response.status}`);
-            }
-            return response.text();
-          })
-          .then(paymentMessage => ({ dataMessage, paymentMessage }));
-      })
-      .then(messages => {
         experimentSaved = true;
-        console.log(messages.dataMessage);
-        console.log(messages.paymentMessage);
-        return messages;
+        console.log(dataMessage);
+        return dataMessage;
       })
       .catch(error => {
         experimentSavePromise = null;
@@ -1248,8 +1218,8 @@
       `
       <div style="max-width:900px; margin:auto; text-align:left; font-size:22px; line-height:1.6;">
         <h2>Points and bonus</h2>
-        <p>Your baseline compensation is <strong>$12</strong>.</p>
-        <p>In the main task, you will earn <strong>$0.50 in bonus pay for every 200 points</strong>.</p>
+        <p>Your guaranteed compensation is <strong>$12</strong>: a $9.50 MTurk reward plus a $2.50 completion bonus.</p>
+        <p>In the main task, you will earn an additional <strong>$0.50 performance bonus for every 200 points</strong>.</p>
         <p>Only main task trials count toward your bonus.</p>
         <p>In the main task, a correct answer on the first, second, third, or fourth choice earns <strong>4, 3, 2, or 1 point(s)</strong>, respectively.</p>
         <p>If none of your first 4 choices is correct, the trial ends and earns <strong>0 points</strong>.</p>
@@ -1403,7 +1373,7 @@
           data: {
             event: "fullscreen_reentry",
             fullscreen_reentry_stage: stageName,
-            trial_index: trialConfig.trialIndex,
+            task_trial_index: trialConfig.trialIndex,
             practice: trialConfig.practice,
             condition_name: trialConfig.condition_name,
             stimulus_duration: trialConfig.duration,
@@ -1425,7 +1395,7 @@
       },
       data: {
         event: "initialize_trial",
-        trial_index: trialConfig.trialIndex,
+        task_trial_index: trialConfig.trialIndex,
         practice: trialConfig.practice,
         condition_name: trialConfig.condition_name,
         stimulus_duration: trialConfig.duration,
@@ -1445,7 +1415,7 @@
       trial_duration: CONFIG.fixationDuration,
       data: {
         event: "fixation",
-        trial_index: trialConfig.trialIndex,
+        task_trial_index: trialConfig.trialIndex,
         practice: trialConfig.practice,
         condition_name: trialConfig.condition_name,
         stimulus_duration: trialConfig.duration,
@@ -1462,7 +1432,7 @@
       trial_duration: trialConfig.duration,
       data: {
         event: "stimulus",
-        trial_index: trialConfig.trialIndex,
+        task_trial_index: trialConfig.trialIndex,
         practice: trialConfig.practice,
         condition_name: trialConfig.condition_name,
         stimulus_duration: trialConfig.duration,
@@ -1490,7 +1460,7 @@
 
             jsPsych.finishTrial({
               event: "choice",
-              trial_index: trialState.currentTrial.trialIndex,
+              task_trial_index: trialState.currentTrial.trialIndex,
               practice: trialState.currentTrial.practice,
               condition_name: trialState.currentTrial.condition_name,
               stimulus_duration: trialState.currentTrial.duration,
@@ -1537,7 +1507,7 @@
 
             jsPsych.finishTrial({
               event: "confidence",
-              trial_index: trialState.currentTrial.trialIndex,
+              task_trial_index: trialState.currentTrial.trialIndex,
               practice: trialState.currentTrial.practice,
               condition_name: trialState.currentTrial.condition_name,
               stimulus_duration: trialState.currentTrial.duration,
@@ -1583,7 +1553,7 @@
       },
       data: {
         event: "iti",
-        trial_index: trialConfig.trialIndex,
+        task_trial_index: trialConfig.trialIndex,
         practice: trialConfig.practice,
         condition_name: trialConfig.condition_name,
         stimulus_duration: trialConfig.duration,
@@ -1632,7 +1602,7 @@
       <div style="max-width:900px; margin:auto; text-align:center; font-size:26px; line-height:1.7;">
         <h2>Main task</h2>
         <p>Practice is complete.</p>
-        <p>Your baseline compensation is $12. From this point on, every 200 points earns $0.50 in bonus pay.</p>
+        <p>Your guaranteed compensation is $12: a $9.50 MTurk reward plus a $2.50 completion bonus. From this point on, every 200 points earns an additional $0.50 performance bonus.</p>
         <p>A correct answer on the first, second, third, or fourth choice earns 4, 3, 2, or 1 point(s), respectively.</p>
         <p>If your first 4 choices are incorrect, the trial ends and earns 0 points.</p>
         <p>Press any key to begin.</p>
@@ -1680,8 +1650,9 @@
         <p style="font-size:34px; font-weight:700; color:#178f3c;">
           Congratulations! You earned ${experimentState.totalPoints} points.
         </p>
-        <p>You earned <strong>$${getBonusDollars(experimentState.totalPoints).toFixed(2)}</strong> in bonus pay.</p>
-        <p>Your total compensation is <strong>$${getTotalCompensationDollars(experimentState.totalPoints).toFixed(2)}</strong>, including the $12 baseline compensation.</p>
+        <p>You earned <strong>$${getBonusDollars(experimentState.totalPoints).toFixed(2)}</strong> in performance bonus pay.</p>
+        <p>Your MTurk reward is <strong>$${CONFIG.mturkBaseRewardDollars.toFixed(2)}</strong>, and you will receive <strong>$${getManualBonusToPayDollars(experimentState.totalPoints).toFixed(2)}</strong> as a separate bonus.</p>
+        <p>Your total compensation is <strong>$${getTotalCompensationDollars(experimentState.totalPoints).toFixed(2)}</strong>.</p>
         <p>Thank you for completing the experiment.</p>
         <p style="font-size:18px; line-height:1.5;">
           For technical or payment questions, contact
