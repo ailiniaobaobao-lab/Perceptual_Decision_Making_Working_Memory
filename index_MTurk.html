@@ -730,6 +730,8 @@
     consentParticipate: "",
     consentDate: "",
     usLocationConfirmed: "",
+    confidenceImportanceAcknowledged: false,
+    confidenceImportanceAcknowledgedAt: "",
     totalPoints: 0
   };
 
@@ -824,6 +826,8 @@
       consent_participate: experimentState.consentParticipate || null,
       consent_date: experimentState.consentDate || null,
       us_location_confirmed: experimentState.usLocationConfirmed || null,
+      confidence_importance_acknowledged: experimentState.confidenceImportanceAcknowledged,
+      confidence_importance_acknowledged_at: experimentState.confidenceImportanceAcknowledgedAt || null,
       baseline_compensation_dollars: CONFIG.baselineCompensationDollars,
       mturk_base_reward_dollars: CONFIG.mturkBaseRewardDollars.toFixed(2),
       bonus_points_per_unit: CONFIG.bonusPointsPerUnit,
@@ -892,6 +896,8 @@
       "consent_participate",
       "consent_date",
       "us_location_confirmed",
+      "confidence_importance_acknowledged",
+      "confidence_importance_acknowledged_at",
       "baseline_compensation_dollars",
       "mturk_base_reward_dollars",
       "bonus_points_per_unit",
@@ -1209,9 +1215,11 @@
       `
       <div style="max-width:900px; margin:auto; text-align:left; font-size:22px; line-height:1.6;">
         <h2>Confidence</h2>
+        <p><strong>One of the main purposes of this study is to understand how people make confidence judgments. Your confidence ratings are just as important as your choices.</strong></p>
         <p>After each choice, rate how confident you are from <strong>1 to 4</strong>.</p>
         <p><strong>1</strong> = not confident</p>
         <p><strong>4</strong> = very confident</p>
+        <p>Please report how confident you actually feel at that moment. There are no right or wrong confidence ratings.</p>
         <p>Please try to use the full confidence scale, rather than always choosing only low or only high confidence ratings.</p>
       </div>
       `,
@@ -1229,6 +1237,50 @@
     show_clickable_nav: true
   };
   timeline.push(instructions);
+
+  timeline.push({
+    type: jsPsychHtmlKeyboardResponse,
+    stimulus: `
+      <div style="max-width:900px; margin:auto; text-align:left; font-size:22px; line-height:1.6;">
+        <h2 style="text-align:center;">Confidence-rating acknowledgment</h2>
+        <p>Please confirm that you understand the importance of the confidence ratings before continuing.</p>
+        <label style="display:flex; align-items:flex-start; gap:12px; margin:28px 0; padding:18px; border:2px solid #444; border-radius:8px; cursor:pointer;">
+          <input id="confidence-importance-confirm" type="checkbox" style="width:22px; height:22px; margin-top:5px; flex:0 0 auto;" />
+          <span><strong>I understand that one of the main purposes of this study is to understand confidence judgments, and that my confidence ratings are just as important as my choices. I will rate my confidence carefully and honestly after each choice.</strong></span>
+        </label>
+        <div style="text-align:center;">
+          <button id="confidence-importance-btn" disabled
+            style="font-size:22px; padding:12px 24px; border:2px solid #222; border-radius:6px; background:white; opacity:0.55; cursor:not-allowed;">
+            Continue to practice
+          </button>
+        </div>
+      </div>
+    `,
+    choices: "NO_KEYS",
+    on_load: function() {
+      const checkbox = document.getElementById("confidence-importance-confirm");
+      const button = document.getElementById("confidence-importance-btn");
+
+      checkbox.addEventListener("change", function() {
+        button.disabled = !checkbox.checked;
+        button.style.opacity = checkbox.checked ? "1" : "0.55";
+        button.style.cursor = checkbox.checked ? "pointer" : "not-allowed";
+      });
+
+      button.addEventListener("click", function() {
+        if (!checkbox.checked) return;
+
+        const acknowledgedAt = new Date().toISOString();
+        experimentState.confidenceImportanceAcknowledged = true;
+        experimentState.confidenceImportanceAcknowledgedAt = acknowledgedAt;
+        jsPsych.finishTrial({
+          event: "confidence_importance_acknowledgment",
+          confidence_importance_acknowledged: true,
+          confidence_importance_acknowledged_at: acknowledgedAt
+        });
+      });
+    }
+  });
 
   /**********************************
    * 12. DISPLAY RENDER FUNCTIONS   *
@@ -1605,6 +1657,7 @@
         <p>Your guaranteed compensation is $12: a $9.50 MTurk reward plus a $2.50 completion bonus. From this point on, every 200 points earns an additional $0.50 performance bonus.</p>
         <p>A correct answer on the first, second, third, or fourth choice earns 4, 3, 2, or 1 point(s), respectively.</p>
         <p>If your first 4 choices are incorrect, the trial ends and earns 0 points.</p>
+        <p style="padding:16px; border:2px solid #444; border-radius:8px;"><strong>Confidence reminder:</strong> One of the main purposes of this study is to understand confidence judgments. Your confidence ratings are just as important as your choices, so please rate your confidence carefully and honestly after every choice.</p>
         <p>Press any key to begin.</p>
       </div>
     `
@@ -1627,6 +1680,7 @@
             <p>You have completed ${percentComplete}% of the main task.</p>
             <p>You have earned ${experimentState.totalPoints} points so far.</p>
             <p>You may take a short break now.</p>
+            <p><strong>Confidence reminder:</strong> Your confidence ratings are just as important as your choices. Please continue to rate them carefully and honestly.</p>
             <p>Press any key when you are ready to continue.</p>
           </div>
           `;
