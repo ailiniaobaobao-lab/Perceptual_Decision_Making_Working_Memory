@@ -1,0 +1,1647 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>PDM-WM task — MTurk no confidence</title>
+
+  <script src="https://unpkg.com/jspsych@8.2.3"></script>
+  <link href="https://unpkg.com/jspsych@8.2.3/css/jspsych.css" rel="stylesheet" type="text/css" />
+
+  <script src="https://unpkg.com/@jspsych/plugin-instructions@2.0.0"></script>
+  <script src="https://unpkg.com/@jspsych/plugin-html-keyboard-response@2.0.0"></script>
+  <script src="https://unpkg.com/@jspsych/plugin-call-function@2.0.0"></script>
+  <script src="https://unpkg.com/@jspsych/plugin-fullscreen@2.0.0"></script>
+  <script src="https://unpkg.com/@jspsych/plugin-virtual-chinrest@2.0.0"></script>
+
+  <style>
+    body {
+      background: white;
+    }
+
+    .task-wrap {
+      margin: 0 auto;
+      text-align: center;
+    }
+
+    .question-title {
+      font-size: 28px;
+      margin-bottom: 12px;
+      font-weight: 600;
+      min-height: 34px;
+    }
+
+    .question-subtitle {
+      font-size: 18px;
+      margin-bottom: 20px;
+      color: #444;
+      min-height: 22px;
+    }
+
+    .pentagon-area {
+      margin: 0 auto;
+      position: relative;
+    }
+
+    .option-btn {
+      position: absolute;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      border: none;
+      background: transparent;
+      padding: 0;
+      line-height: 0;
+      cursor: pointer;
+      transform: translate(-50%, -50%);
+    }
+
+    .option-btn.hidden {
+      visibility: hidden;
+      pointer-events: none;
+    }
+
+    .option-btn svg {
+      overflow: visible;
+      display: block;
+      margin: 0;
+    }
+
+    .small-note {
+      font-size: 16px;
+      color: #666;
+      margin-top: 12px;
+    }
+
+    .feedback-wrap {
+      width: 800px;
+      margin: 140px auto 0 auto;
+      text-align: center;
+    }
+
+    .feedback-title {
+      font-size: 44px;
+      font-weight: 700;
+      color: #178f3c;
+      line-height: 1.1;
+    }
+
+    .feedback-title.incorrect {
+      color: #b00020;
+    }
+
+    .feedback-points {
+      margin-top: 10px;
+      font-size: 30px;
+      font-weight: 600;
+      color: #178f3c;
+      line-height: 1.1;
+    }
+
+    .progress-shell {
+      width: min(760px, calc(100vw - 80px));
+      position: fixed;
+      top: 26px;
+      left: 50%;
+      transform: translateX(-50%);
+      z-index: 10;
+    }
+
+    .progress-track {
+      width: 100%;
+      height: 14px;
+      border: 2px solid #222;
+      border-radius: 999px;
+      background: white;
+      overflow: hidden;
+      box-sizing: border-box;
+    }
+
+    .progress-fill {
+      height: 100%;
+      background: #178f3c;
+      border-radius: 999px;
+      transition: width 200ms ease;
+    }
+
+    .fixation {
+      font-size: 64px;
+      font-weight: 600;
+    }
+
+    .subject-wrap {
+      max-width: 700px;
+      margin: 120px auto;
+      text-align: center;
+      font-size: 24px;
+      line-height: 1.6;
+    }
+
+    .subject-input {
+      font-size: 28px;
+      padding: 10px 14px;
+      width: 220px;
+      text-align: center;
+      margin-top: 16px;
+    }
+
+    .subject-btn {
+      font-size: 22px;
+      padding: 10px 22px;
+      margin-top: 20px;
+      cursor: pointer;
+    }
+
+    .error-text {
+      color: #b00020;
+      margin-top: 12px;
+      font-size: 18px;
+      min-height: 24px;
+    }
+
+    .consent-wrap {
+      max-width: 980px;
+      margin: 30px auto;
+      text-align: left;
+      font-size: 18px;
+      line-height: 1.5;
+    }
+
+    .consent-frame {
+      width: 100%;
+      height: 560px;
+      border: 2px solid #222;
+      box-sizing: border-box;
+      margin: 12px 0 18px 0;
+    }
+
+    .consent-btn {
+      display: block;
+      font-size: 22px;
+      padding: 10px 22px;
+      margin: 14px auto 0 auto;
+      cursor: pointer;
+    }
+  </style>
+</head>
+<body></body>
+
+<script>
+  /**********************
+   * 1. BASIC SETTINGS  *
+   **********************/
+  const CONFIG = {
+    nOptions: 5,
+    stimulusDurations: [500, 1500],
+    fixationDuration: 700,
+    interTrialInterval: 500,
+    correctFeedbackDuration: 900,
+    stimulusRadius: 52,
+    svgSize: 120,
+    maxDotCount: 100,
+    practiceBlock1Duration: 1500,
+    practiceBlock2Durations: [500, 1500],
+    practiceBlock1Trials: 12,
+    practiceBlock2Trials: 12,
+    practiceBlock3RepeatsPerCondition: 2,
+    practiceEasyStep: 12,
+    mainRepeatsPerCondition: 70,
+    mainTrialsPerBlock: 40,
+    attentionCheckInterval: 80,
+    baselineCompensationDollars: 12,
+    mturkBaseRewardDollars: 9.50,
+    bonusPointsPerUnit: 200,
+    bonusDollarsPerUnit: 0.50
+  };
+
+  const DOT_COUNT_CONDITION_PATTERNS = [
+    {
+      id: "cond_1",
+      label: "all_different",
+      tierPattern: [0, 1, 2, 3, 4]
+    },
+    {
+      id: "cond_2",
+      label: "two_pairs_same",
+      tierPattern: [0, 1, 1, 2, 2]
+    },
+    {
+      id: "cond_3",
+      label: "three_same",
+      tierPattern: [0, 1, 1, 1, 2]
+    },
+    {
+      id: "cond_4",
+      label: "four_same",
+      tierPattern: [0, 1, 1, 1, 1]
+    }
+  ];
+
+  const MAIN_CONDITION_STEPS_BY_DURATION = {
+    500: {
+      cond_1: 4,
+      cond_2: 6,
+      cond_3: 7,
+      cond_4: 8
+    },
+    1500: {
+      cond_1: 3,
+      cond_2: 5,
+      cond_3: 6,
+      cond_4: 7
+    }
+  };
+
+  const PRACTICE_EASY_CONDITION = {
+    id: "easy",
+    label: "all_different",
+    step: CONFIG.practiceEasyStep,
+    tierPattern: [0, 1, 2, 3, 4]
+  };
+
+  /*************************
+   * 2. HELPER FUNCTIONS   *
+   *************************/
+  function shuffle(array) {
+    const arr = [...array];
+    for (let i = arr.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [arr[i], arr[j]] = [arr[j], arr[i]];
+    }
+    return arr;
+  }
+
+  function mulberry32(seed) {
+    return function() {
+      let t = seed += 0x6D2B79F5;
+      t = Math.imul(t ^ (t >>> 15), t | 1);
+      t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+      return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+    };
+  }
+
+  function saveCSVToServer(filename, text) {
+    const formData = new URLSearchParams();
+    formData.append("filename", filename);
+    formData.append("csvdata", text);
+
+    return fetch("save_data_MTurk.php", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/x-www-form-urlencoded"
+      },
+      body: formData.toString()
+    });
+  }
+
+  function generateRandomToken(length) {
+    const alphabet = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
+    const values = new Uint8Array(length);
+
+    if (window.crypto && window.crypto.getRandomValues) {
+      window.crypto.getRandomValues(values);
+    } else {
+      for (let i = 0; i < length; i++) {
+        values[i] = Math.floor(Math.random() * 256);
+      }
+    }
+
+    return Array.from(values, value => alphabet[value % alphabet.length]).join("");
+  }
+
+  function generateStudyID() {
+    return `PDM-${generateRandomToken(12)}`;
+  }
+
+  function generateCompletionCode() {
+    return `PDM-${generateRandomToken(6)}`;
+  }
+
+  function positionName(index) {
+    const map = {
+      0: "top",
+      1: "upper_left",
+      2: "upper_right",
+      3: "lower_left",
+      4: "lower_right"
+    };
+    return map[index];
+  }
+
+  function degToPx(deg, pxPerMm, viewingDistanceMm) {
+    const mm = 2 * viewingDistanceMm * Math.tan((deg * Math.PI / 180) / 2);
+    return mm * pxPerMm;
+  }
+
+  function pxToDeg(px, pxPerMm, viewingDistanceMm) {
+    const mm = px / pxPerMm;
+    return 2 * Math.atan((mm / 2) / viewingDistanceMm) * 180 / Math.PI;
+  }
+
+  function clamp(value, min, max) {
+    return Math.max(min, Math.min(max, value));
+  }
+
+  /*************************************
+   * 3. CALIBRATION / DISPLAY SCALING  *
+   *************************************/
+  const BASELINE_RENDER = {
+    pxPerMm: 96 / 25.4,
+    viewingDistanceMm: 600,
+    areaWidthPx: 900,
+    areaHeightPx: 620,
+    buttonSizePx: 150,
+    displayedSvgSizePx: 120,
+    centersPx: [
+      { x: 435, y: 70 },
+      { x: 180, y: 230 },
+      { x: 690, y: 230 },
+      { x: 280, y: 460 },
+      { x: 590, y: 460 }
+    ]
+  };
+
+  const calibrationState = {
+    pixelsPerMm: BASELINE_RENDER.pxPerMm,
+    viewingDistanceMm: BASELINE_RENDER.viewingDistanceMm,
+    calibrated: false
+  };
+
+  const TARGET_VISUAL_ANGLES = {
+    areaWidthDeg: pxToDeg(BASELINE_RENDER.areaWidthPx, BASELINE_RENDER.pxPerMm, BASELINE_RENDER.viewingDistanceMm),
+    areaHeightDeg: pxToDeg(BASELINE_RENDER.areaHeightPx, BASELINE_RENDER.pxPerMm, BASELINE_RENDER.viewingDistanceMm),
+    buttonSizeDeg: pxToDeg(BASELINE_RENDER.buttonSizePx, BASELINE_RENDER.pxPerMm, BASELINE_RENDER.viewingDistanceMm),
+    displayedSvgSizeDeg: pxToDeg(BASELINE_RENDER.displayedSvgSizePx, BASELINE_RENDER.pxPerMm, BASELINE_RENDER.viewingDistanceMm),
+    centersDeg: BASELINE_RENDER.centersPx.map(c => ({
+      x: pxToDeg(c.x, BASELINE_RENDER.pxPerMm, BASELINE_RENDER.viewingDistanceMm),
+      y: pxToDeg(c.y, BASELINE_RENDER.pxPerMm, BASELINE_RENDER.viewingDistanceMm)
+    }))
+  };
+
+  let DISPLAY = {
+    areaWidthPx: BASELINE_RENDER.areaWidthPx,
+    areaHeightPx: BASELINE_RENDER.areaHeightPx,
+    buttonSizePx: BASELINE_RENDER.buttonSizePx,
+    displayedSvgSizePx: BASELINE_RENDER.displayedSvgSizePx,
+    centersPx: BASELINE_RENDER.centersPx
+  };
+
+  function updateDisplayMetrics() {
+    let ppm = calibrationState.pixelsPerMm;
+    let vdm = calibrationState.viewingDistanceMm;
+
+    if (!Number.isFinite(ppm) || ppm <= 0) ppm = BASELINE_RENDER.pxPerMm;
+    if (!Number.isFinite(vdm) || vdm <= 0) vdm = BASELINE_RENDER.viewingDistanceMm;
+
+    const areaWidthPx = clamp(degToPx(TARGET_VISUAL_ANGLES.areaWidthDeg, ppm, vdm), 700, 1500);
+    const areaHeightPx = clamp(degToPx(TARGET_VISUAL_ANGLES.areaHeightDeg, ppm, vdm), 500, 1100);
+    const rawCentersPx = TARGET_VISUAL_ANGLES.centersDeg.map(c => ({
+      x: degToPx(c.x, ppm, vdm),
+      y: degToPx(c.y, ppm, vdm)
+    }));
+    const minX = Math.min(...rawCentersPx.map(c => c.x));
+    const maxX = Math.max(...rawCentersPx.map(c => c.x));
+    const minY = Math.min(...rawCentersPx.map(c => c.y));
+    const maxY = Math.max(...rawCentersPx.map(c => c.y));
+    const offsetX = (areaWidthPx / 2) - ((minX + maxX) / 2);
+    const offsetY = (areaHeightPx / 2) - ((minY + maxY) / 2);
+
+    DISPLAY = {
+      areaWidthPx: areaWidthPx,
+      areaHeightPx: areaHeightPx,
+      buttonSizePx: clamp(degToPx(TARGET_VISUAL_ANGLES.buttonSizeDeg, ppm, vdm), 110, 260),
+      displayedSvgSizePx: clamp(degToPx(TARGET_VISUAL_ANGLES.displayedSvgSizeDeg, ppm, vdm), 90, 220),
+      centersPx: rawCentersPx.map(c => ({
+        x: c.x + offsetX,
+        y: c.y + offsetY
+      }))
+    };
+  }
+
+  updateDisplayMetrics();
+
+  function getOptionStyle(index) {
+    const center = DISPLAY.centersPx[index];
+    return `
+      left: ${center.x}px;
+      top: ${center.y}px;
+      width: ${DISPLAY.buttonSizePx}px;
+      height: ${DISPLAY.buttonSizePx}px;
+    `;
+  }
+
+  /**********************************
+   * 4. DOT GENERATION              *
+   **********************************/
+  function generateDots(nDots, seed) {
+    const rand = mulberry32(seed);
+    const points = [];
+    const center = CONFIG.svgSize / 2;
+    const margin = 10;
+    const radius = CONFIG.stimulusRadius - 6;
+
+    let attempts = 0;
+    while (points.length < nDots && attempts < nDots * 250) {
+      attempts++;
+      const x = margin + rand() * (CONFIG.svgSize - 2 * margin);
+      const y = margin + rand() * (CONFIG.svgSize - 2 * margin);
+
+      const dx = x - center;
+      const dy = y - center;
+      const inside = (dx * dx + dy * dy) <= radius * radius;
+      if (!inside) continue;
+
+      let overlaps = false;
+      for (const p of points) {
+        const ddx = x - p.x;
+        const ddy = y - p.y;
+        if (ddx * ddx + ddy * ddy < 20) {
+          overlaps = true;
+          break;
+        }
+      }
+      if (!overlaps) points.push({ x, y });
+    }
+    return points;
+  }
+
+  /**********************************
+   * 5. BUILD TRIAL CONFIGURATIONS  *
+   **********************************/
+  function buildDotCounts(conditionSpec) {
+    return conditionSpec.tierPattern.map(level => {
+      return CONFIG.maxDotCount - conditionSpec.step * level;
+    });
+  }
+
+  function getMainConditionSpecsForDuration(duration) {
+    const stepsForDuration = MAIN_CONDITION_STEPS_BY_DURATION[duration] ?? {};
+
+    return DOT_COUNT_CONDITION_PATTERNS.map(conditionPattern => ({
+      ...conditionPattern,
+      step: stepsForDuration[conditionPattern.id]
+    })).filter(conditionSpec => Number.isFinite(conditionSpec.step));
+  }
+
+  function buildMainConditionCombos() {
+    const combos = [];
+
+    CONFIG.stimulusDurations.forEach(duration => {
+      getMainConditionSpecsForDuration(duration).forEach(conditionSpec => {
+        combos.push({ duration, conditionSpec });
+      });
+    });
+
+    return combos;
+  }
+
+  function buildRepeatedCombos(baseCombos, repeatsPerCombo) {
+    const combos = [];
+
+    for (let repeatIndex = 0; repeatIndex < repeatsPerCombo; repeatIndex++) {
+      baseCombos.forEach(combo => {
+        combos.push({ ...combo });
+      });
+    }
+
+    return combos;
+  }
+
+  function getPointsForAttempt(attemptNumber) {
+    const pointsByAttempt = [4, 3, 2, 1, 0];
+    return pointsByAttempt[attemptNumber - 1] ?? 0;
+  }
+
+  function getBonusDollars(totalPoints) {
+    const completedBonusUnits = Math.floor(totalPoints / CONFIG.bonusPointsPerUnit);
+    return completedBonusUnits * CONFIG.bonusDollarsPerUnit;
+  }
+
+  function getTotalCompensationDollars(totalPoints) {
+    return CONFIG.baselineCompensationDollars + getBonusDollars(totalPoints);
+  }
+
+  function getManualBonusToPayDollars(totalPoints) {
+    return getTotalCompensationDollars(totalPoints) - CONFIG.mturkBaseRewardDollars;
+  }
+
+  function renderTrialFeedback() {
+    const wasCorrect = trialState.lastChoiceCorrect;
+    const pointsLine = trialState.currentTrial?.practice ||
+      trialState.currentTrial?.attentionCheck ||
+      !wasCorrect ||
+      trialState.lastPointsAwarded <= 0
+      ? ""
+      : `<div class="feedback-points">+${trialState.lastPointsAwarded} points</div>`;
+
+    const feedbackClass = wasCorrect ? "feedback-title" : "feedback-title incorrect";
+    const feedbackText = wasCorrect ? "CORRECT!" : "INCORRECT!";
+
+    return `
+      ${renderMainProgressBar(trialState.currentTrial, true)}
+      <div class="feedback-wrap">
+        <div class="${feedbackClass}">${feedbackText}</div>
+        ${pointsLine}
+      </div>
+    `;
+  }
+
+  function buildBalancedDurationList(durations, nTrials) {
+    const durationList = [];
+    for (let i = 0; i < nTrials; i++) {
+      durationList.push(durations[i % durations.length]);
+    }
+    return shuffle(durationList);
+  }
+
+  function makeDotCountTrial(trialIndex, duration, conditionSpec, options = {}) {
+    const {
+      practice = false,
+      conditionNamePrefix = "",
+      conditionNameOverride = "",
+      attentionCheck = false
+    } = options;
+
+    const dotCounts = shuffle(buildDotCounts(conditionSpec));
+    const correctPosition = dotCounts.indexOf(CONFIG.maxDotCount);
+
+    const trialOptions = dotCounts.map((nDots, optionIndex) => {
+      const points = generateDots(nDots, trialIndex * 100 + optionIndex * 17 + 1);
+      return { nDots, points };
+    });
+
+    return {
+      trialIndex,
+      practice,
+      attentionCheck,
+      duration,
+      condition_name: conditionNameOverride || (conditionNamePrefix
+        ? `${conditionNamePrefix}_${conditionSpec.id}_${conditionSpec.label}`
+        : `${conditionSpec.id}_${conditionSpec.label}`),
+      correctPosition,
+      options: trialOptions
+    };
+  }
+
+  function buildTrialsFromCombos(combos, startIndex, options = {}) {
+    return shuffle(combos).map(({ duration, conditionSpec }, index) => {
+      return makeDotCountTrial(startIndex + index, duration, conditionSpec, options);
+    });
+  }
+
+  function buildPracticeBlocks(startIndex) {
+    let counter = startIndex;
+
+    const block1Combos = Array.from({ length: CONFIG.practiceBlock1Trials }, () => ({
+      duration: CONFIG.practiceBlock1Duration,
+      conditionSpec: PRACTICE_EASY_CONDITION
+    }));
+    const block1Trials = buildTrialsFromCombos(block1Combos, counter, {
+      practice: true,
+      conditionNamePrefix: "practice_block_1"
+    });
+    counter += block1Trials.length;
+
+    const block2Combos = buildBalancedDurationList(
+      CONFIG.practiceBlock2Durations,
+      CONFIG.practiceBlock2Trials
+    ).map(duration => ({
+      duration,
+      conditionSpec: PRACTICE_EASY_CONDITION
+    }));
+    const block2Trials = buildTrialsFromCombos(block2Combos, counter, {
+      practice: true,
+      conditionNamePrefix: "practice_block_2"
+    });
+    counter += block2Trials.length;
+
+    const block3Combos = buildRepeatedCombos(
+      buildMainConditionCombos(),
+      CONFIG.practiceBlock3RepeatsPerCondition
+    );
+    const block3Trials = buildTrialsFromCombos(block3Combos, counter, {
+      practice: true,
+      conditionNamePrefix: "practice_block_3"
+    });
+
+    return [
+      {
+        title: "Practice 1",
+        description: "",
+        trials: block1Trials
+      },
+      {
+        title: "Practice 2",
+        description: "The trials will now become a bit more difficult.",
+        trials: block2Trials
+      },
+      {
+        title: "Practice 3",
+        description: "The trials will now become more difficult and match the main experiment.",
+        trials: block3Trials
+      }
+    ];
+  }
+
+  function buildMainTrials(startIndex) {
+    const mainCombos = buildRepeatedCombos(
+      buildMainConditionCombos(),
+      CONFIG.mainRepeatsPerCondition
+    );
+    return buildTrialsFromCombos(mainCombos, startIndex);
+  }
+
+  function makeAttentionCheckTrial(trialIndex) {
+    return makeDotCountTrial(
+      trialIndex,
+      CONFIG.practiceBlock1Duration,
+      PRACTICE_EASY_CONDITION,
+      {
+        conditionNameOverride: "easy",
+        attentionCheck: true
+      }
+    );
+  }
+
+  const practiceBlocks = buildPracticeBlocks(1);
+  const practiceTrials = practiceBlocks.reduce((allTrials, block) => {
+    return allTrials.concat(block.trials);
+  }, []);
+  const mainTrials = buildMainTrials(practiceTrials.length + 1);
+
+  /****************************
+   * 6. GLOBAL STATE STORAGE *
+   ****************************/
+  const mturkURLParameters = new URLSearchParams(window.location.search);
+  const mturkContext = {
+    workerID: mturkURLParameters.get("workerId") || "",
+    assignmentID: mturkURLParameters.get("assignmentId") || "",
+    hitID: mturkURLParameters.get("hitId") || ""
+  };
+
+  const experimentState = {
+    studyID: generateStudyID(),
+    workerID: "",
+    completionCode: generateCompletionCode(),
+    consentParticipate: "",
+    consentDate: "",
+    usLocationConfirmed: "",
+    totalPoints: 0
+  };
+
+  let experimentSavePromise = null;
+  let experimentSaved = false;
+
+  const trialState = {
+    currentTrial: null,
+    available: [],
+    choiceNumber: 0,
+    trialStartTime: null,
+    choiceScreenStartTime: null,
+    lastChoiceCorrect: null,
+    lastPointsAwarded: 0
+  };
+
+  const interactionEvents = [];
+
+  function initializeTrialState(trialConfig) {
+    trialState.currentTrial = trialConfig;
+    trialState.available = Array(CONFIG.nOptions).fill(true);
+    trialState.choiceNumber = 0;
+    trialState.trialStartTime = performance.now();
+    trialState.choiceScreenStartTime = null;
+    trialState.lastChoiceCorrect = null;
+    trialState.lastPointsAwarded = 0;
+  }
+
+  /***********************
+   * 7. JSPSYCH SETUP    *
+   ***********************/
+  const jsPsych = initJsPsych({
+    on_interaction_data_update: function(data) {
+      const eventNameMap = {
+        blur: "window_blur",
+        focus: "window_focus",
+        fullscreenexit: "fullscreen_exit"
+      };
+
+      if (!eventNameMap[data.event]) return;
+
+      const currentTrial = trialState.currentTrial;
+      interactionEvents.push({
+        event: eventNameMap[data.event],
+        time_elapsed: data.time ?? Math.round(performance.now()),
+        task_trial_index: currentTrial?.trialIndex ?? null,
+        practice: currentTrial?.practice ?? null,
+        condition_name: currentTrial?.condition_name ?? null,
+        stimulus_duration: currentTrial?.duration ?? null,
+        correct_position: currentTrial?.correctPosition ?? null,
+        choice_number: trialState.choiceNumber || null,
+        elapsed_ms_from_trial_start:
+          trialState.trialStartTime !== null
+            ? Math.round(performance.now() - trialState.trialStartTime)
+            : null,
+        system_event_time_ms: data.time ?? Math.round(performance.now()),
+        system_event_iso_time: new Date().toISOString(),
+        window_has_focus: document.hasFocus(),
+        fullscreen_active: isFullscreenActive(),
+        document_visibility_state: document.visibilityState,
+        jspsych_interaction_trial: data.trial ?? null
+      });
+    },
+    on_finish: function() {
+      saveExperimentData().catch(error => {
+        console.error("Could not save data to server:", error);
+      });
+    }
+  });
+
+  function buildExperimentCSV() {
+    const raw = jsPsych.data.get().values().concat(interactionEvents);
+    const voluntaryBreakTotalMs = raw
+      .filter(row => row.event === "main_break")
+      .reduce((total, row) => total + (Number.isFinite(Number(row.rt)) ? Number(row.rt) : 0), 0);
+    const finalExperimentElapsedMs = Math.round(performance.now());
+    const activeExperimentElapsedMs = Math.max(
+      0,
+      finalExperimentElapsedMs - voluntaryBreakTotalMs
+    );
+
+    const cleaned = raw.map(row => ({
+      study_id: experimentState.studyID,
+      worker_id: experimentState.workerID,
+      completion_code: experimentState.completionCode,
+      consent_participate: experimentState.consentParticipate || null,
+      consent_date: experimentState.consentDate || null,
+      us_location_confirmed: experimentState.usLocationConfirmed || null,
+      baseline_compensation_dollars: CONFIG.baselineCompensationDollars,
+      mturk_base_reward_dollars: CONFIG.mturkBaseRewardDollars.toFixed(2),
+      bonus_points_per_unit: CONFIG.bonusPointsPerUnit,
+      bonus_dollars_per_unit: CONFIG.bonusDollarsPerUnit,
+      final_total_points: experimentState.totalPoints,
+      bonus_earned_dollars: getBonusDollars(experimentState.totalPoints).toFixed(2),
+      total_compensation_dollars: getTotalCompensationDollars(experimentState.totalPoints).toFixed(2),
+      manual_bonus_to_pay_dollars: getManualBonusToPayDollars(experimentState.totalPoints).toFixed(2),
+      final_experiment_elapsed_ms: finalExperimentElapsedMs,
+      final_experiment_elapsed_min: (finalExperimentElapsedMs / 60000).toFixed(3),
+      voluntary_break_total_ms: Math.round(voluntaryBreakTotalMs),
+      voluntary_break_total_min: (voluntaryBreakTotalMs / 60000).toFixed(3),
+      active_experiment_elapsed_ms: Math.round(activeExperimentElapsedMs),
+      active_experiment_elapsed_min: (activeExperimentElapsedMs / 60000).toFixed(3),
+      pixels_per_mm: row.pixels_per_mm ?? null,
+      mm_per_px: row.mm_per_px ?? null,
+      viewing_distance_mm: row.viewing_distance_mm ?? null,
+      event: row.event ?? null,
+      experiment_elapsed_ms: row.time_elapsed ?? row.system_event_time_ms ?? null,
+      experiment_elapsed_min:
+        row.time_elapsed !== undefined && row.time_elapsed !== null
+          ? (row.time_elapsed / 60000).toFixed(3)
+          : row.system_event_time_ms !== undefined && row.system_event_time_ms !== null
+            ? (row.system_event_time_ms / 60000).toFixed(3)
+            : null,
+      rt: row.rt ?? null,
+      task_trial_index: row.task_trial_index ?? null,
+      jspsych_trial_index: row.trial_index ?? null,
+      practice: row.practice ?? null,
+      condition_name: row.condition_name ?? null,
+      stimulus_duration: row.stimulus_duration ?? null,
+      correct_position: row.correct_position ?? null,
+      correct_position_name:
+        row.correct_position !== undefined && row.correct_position !== null
+          ? positionName(row.correct_position)
+          : null,
+      dot_counts: row.dot_counts ?? null,
+      choice_number: row.choice_number ?? null,
+      choice_index: row.choice_index ?? null,
+      choice_position_name:
+        row.choice_index !== undefined && row.choice_index !== null
+          ? positionName(row.choice_index)
+          : null,
+      elapsed_ms_from_trial_start: row.elapsed_ms_from_trial_start ?? null,
+      correct: row.correct ?? null,
+      remaining_options_before_choice: row.remaining_options_before_choice ?? null,
+      points_awarded: row.points_awarded ?? null,
+      total_points: row.total_points ?? null,
+      system_event_time_ms: row.system_event_time_ms ?? null,
+      system_event_iso_time: row.system_event_iso_time ?? null,
+      window_has_focus: row.window_has_focus ?? null,
+      fullscreen_active: row.fullscreen_active ?? null,
+      document_visibility_state: row.document_visibility_state ?? null,
+      jspsych_interaction_trial: row.jspsych_interaction_trial ?? null,
+      fullscreen_reentry_stage: row.fullscreen_reentry_stage ?? null,
+      fullscreen_success: row.success ?? null
+    }));
+
+    const columns = [
+      "study_id",
+      "worker_id",
+      "completion_code",
+      "consent_participate",
+      "consent_date",
+      "us_location_confirmed",
+      "baseline_compensation_dollars",
+      "mturk_base_reward_dollars",
+      "bonus_points_per_unit",
+      "bonus_dollars_per_unit",
+      "final_total_points",
+      "bonus_earned_dollars",
+      "total_compensation_dollars",
+      "manual_bonus_to_pay_dollars",
+      "final_experiment_elapsed_ms",
+      "final_experiment_elapsed_min",
+      "voluntary_break_total_ms",
+      "voluntary_break_total_min",
+      "active_experiment_elapsed_ms",
+      "active_experiment_elapsed_min",
+      "pixels_per_mm",
+      "mm_per_px",
+      "viewing_distance_mm",
+      "event",
+      "experiment_elapsed_ms",
+      "experiment_elapsed_min",
+      "rt",
+      "task_trial_index",
+      "jspsych_trial_index",
+      "practice",
+      "condition_name",
+      "stimulus_duration",
+      "correct_position",
+      "correct_position_name",
+      "dot_counts",
+      "choice_number",
+      "choice_index",
+      "choice_position_name",
+      "elapsed_ms_from_trial_start",
+      "correct",
+      "remaining_options_before_choice",
+      "points_awarded",
+      "total_points",
+      "system_event_time_ms",
+      "system_event_iso_time",
+      "window_has_focus",
+      "fullscreen_active",
+      "document_visibility_state",
+      "jspsych_interaction_trial",
+      "fullscreen_reentry_stage",
+      "fullscreen_success"
+    ];
+
+    const escapeCSV = (value) => {
+      if (value === null || value === undefined) return "";
+      const str = String(value);
+      if (str.includes('"') || str.includes(",") || str.includes("\n")) {
+        return '"' + str.replace(/"/g, '""') + '"';
+      }
+      return str;
+    };
+
+    const csvLines = [
+      columns.join(","),
+      ...cleaned.map(row => columns.map(col => escapeCSV(row[col])).join(","))
+    ];
+
+    const csv = csvLines.join("\n");
+    const safeStudyID = experimentState.studyID.replace(/[^\w-]/g, "");
+    const filename = `study_${safeStudyID}_MTurk_no_confidence.csv`;
+
+    return { filename, csv };
+  }
+
+  function saveExperimentData() {
+    if (experimentSaved) {
+      return Promise.resolve("Data already saved.");
+    }
+
+    if (experimentSavePromise) {
+      return experimentSavePromise;
+    }
+
+    const { filename, csv } = buildExperimentCSV();
+    experimentSavePromise = saveCSVToServer(filename, csv)
+      .then(response => {
+        if (!response.ok) {
+          throw new Error(`Behavior-data server returned ${response.status}`);
+        }
+        return response.text();
+      })
+      .then(dataMessage => {
+        experimentSaved = true;
+        console.log(dataMessage);
+        return dataMessage;
+      })
+      .catch(error => {
+        experimentSavePromise = null;
+        throw error;
+      });
+
+    return experimentSavePromise;
+  }
+
+  function isFullscreenActive() {
+    return Boolean(
+      document.fullscreenElement ||
+      document.webkitFullscreenElement ||
+      document.mozFullScreenElement ||
+      document.msFullscreenElement
+    );
+  }
+
+  const timeline = [];
+
+  /*************************
+   * 8. CONSENT SCREEN     *
+   *************************/
+  const consentScreen = {
+    type: jsPsychHtmlKeyboardResponse,
+    stimulus: `
+      <div class="consent-wrap">
+        <h2 style="text-align:center;">Consent Form</h2>
+        <p>Please review the consent form before starting the study.</p>
+        <p>
+          If the PDF does not display below,
+          <a href="Consent_online_study_MTurk.pdf" target="_blank" rel="noopener">open the consent form in a new tab</a>.
+        </p>
+        <p>
+          For technical or payment questions, contact
+          <a href="mailto:gt.perception@gmail.com">gt.perception@gmail.com</a>.
+          Please include your MTurk Worker ID, but do not include your study responses.
+        </p>
+        <iframe class="consent-frame" src="Consent_online_study_MTurk.pdf#page=1"></iframe>
+        <p style="text-align:center;">
+          By clicking the button below and beginning the study, you indicate your consent to participate.
+        </p>
+        <label style="display:block; max-width:760px; margin:18px auto; font-size:19px; line-height:1.5;">
+          <input id="us-location-confirm" type="checkbox" style="width:20px; height:20px; margin-right:8px; vertical-align:middle;" />
+          I confirm that I am currently physically located in the United States.
+        </label>
+        <p style="text-align:center; font-size:17px;">If you are not currently in the United States, please do not continue.</p>
+        <button id="consent-btn" class="consent-btn" disabled style="opacity:0.55; cursor:not-allowed;">I agree and want to begin</button>
+      </div>
+    `,
+    choices: "NO_KEYS",
+    on_load: function() {
+      const btn = document.getElementById("consent-btn");
+      const locationCheckbox = document.getElementById("us-location-confirm");
+
+      locationCheckbox.addEventListener("change", function() {
+        btn.disabled = !locationCheckbox.checked;
+        btn.style.opacity = locationCheckbox.checked ? "1" : "0.55";
+        btn.style.cursor = locationCheckbox.checked ? "pointer" : "not-allowed";
+      });
+
+      btn.addEventListener("click", function() {
+        if (!locationCheckbox.checked) return;
+        const consentDate = new Date().toISOString();
+        experimentState.consentParticipate = "yes";
+        experimentState.consentDate = consentDate;
+        experimentState.usLocationConfirmed = "yes";
+
+        jsPsych.finishTrial({
+          event: "consent",
+          consent_participate: "yes",
+          consent_date: consentDate,
+          us_location_confirmed: "yes"
+        });
+      });
+    }
+  };
+  timeline.push(consentScreen);
+
+  /*************************
+   * 9. WORKER ID SCREEN   *
+   *************************/
+  const workerIDScreen = {
+    type: jsPsychHtmlKeyboardResponse,
+    stimulus: `
+      <div class="subject-wrap">
+        <h2>MTurk Worker ID</h2>
+        <p>Please enter your MTurk Worker ID before starting.</p>
+        <input id="subject-id-input" class="subject-input" type="text" autocomplete="off" />
+        <br>
+        <button id="subject-id-btn" class="subject-btn">Continue</button>
+        <div id="subject-id-error" class="error-text"></div>
+      </div>
+    `,
+    choices: "NO_KEYS",
+    on_load: function() {
+      const input = document.getElementById("subject-id-input");
+      const btn = document.getElementById("subject-id-btn");
+      const error = document.getElementById("subject-id-error");
+
+      input.focus();
+
+      function submitID() {
+        const value = input.value.trim();
+        if (!value) {
+          error.textContent = "Please enter your MTurk Worker ID.";
+          return;
+        }
+
+        if (!/^A[A-Z0-9]{1,63}$/.test(value)) {
+          error.textContent = "Please enter a valid MTurk Worker ID. It should begin with A and contain only capital letters and numbers.";
+          return;
+        }
+
+        if (mturkContext.workerID && value !== mturkContext.workerID) {
+          error.textContent = "This Worker ID does not match the Worker ID provided by MTurk. Please check it and try again.";
+          return;
+        }
+
+        experimentState.workerID = value;
+        jsPsych.finishTrial({
+          event: "worker_id_recorded"
+        });
+      }
+
+      btn.addEventListener("click", submitID);
+      input.addEventListener("keydown", function(e) {
+        if (e.key === "Enter") {
+          submitID();
+        }
+      });
+    }
+  };
+  timeline.push(workerIDScreen);
+
+  /*************************************
+   * 10. SCREEN / VIEWING CALIBRATION  *
+   *************************************/
+  const calibrationIntro = {
+    type: jsPsychInstructions,
+    pages: [
+      `
+      <div style="max-width:900px; margin:auto; text-align:left; font-size:22px; line-height:1.6;">
+        <h2>Screen setup</h2>
+        <p>Please have a real credit card or bank card ready.</p>
+        <p>You will use it for a brief screen setup before the task begins.</p>
+        <p>Please sit normally, keep your head still, and follow the on-screen instructions.</p>
+      </div>
+      `
+    ],
+    show_clickable_nav: true
+  };
+  timeline.push(calibrationIntro);
+
+  const enter_fullscreen = {
+    type: jsPsychFullscreen,
+    fullscreen_mode: true
+  };
+  timeline.push(enter_fullscreen);
+
+  const chinrest = {
+    type: jsPsychVirtualChinrest,
+    blindspot_reps: 3,
+    resize_units: "none",
+    item_path: "./card.png",
+    viewing_distance_report: "none",
+    on_finish: function(data) {
+      const pixelsPerMm =
+        Number.isFinite(data.px2mm) && data.px2mm > 0
+          ? data.px2mm
+          : BASELINE_RENDER.pxPerMm;
+
+      calibrationState.pixelsPerMm = pixelsPerMm;
+      calibrationState.viewingDistanceMm = data.view_dist_mm;
+      calibrationState.calibrated = true;
+      updateDisplayMetrics();
+
+      jsPsych.data.addProperties({
+        pixels_per_mm: pixelsPerMm,
+        mm_per_px:
+          Number.isFinite(pixelsPerMm) && pixelsPerMm > 0
+            ? 1 / pixelsPerMm
+            : null,
+        viewing_distance_mm: data.view_dist_mm
+      });
+    }
+  };
+  timeline.push(chinrest);
+
+  timeline.push({
+    type: jsPsychHtmlKeyboardResponse,
+    stimulus: `
+      <div style="max-width:900px; margin:auto; text-align:center; font-size:24px; line-height:1.7;">
+        <h2>Screen setup complete</h2>
+        <p>The task is ready to begin.</p>
+        <p>Press any key to continue.</p>
+      </div>
+    `
+  });
+
+  /***********************
+   * 11. INSTRUCTIONS    *
+   ***********************/
+  const instructions = {
+    type: jsPsychInstructions,
+    pages: [
+      `
+      <div style="max-width:900px; margin:auto; text-align:left; font-size:22px; line-height:1.6;">
+        <h2>Task</h2>
+        <p>On each trial, you will briefly see <strong>5 circles</strong>.</p>
+        <p>Your task is to decide <strong>which circle had the most dots</strong>.</p>
+      </div>
+      `,
+      `
+      <div style="max-width:900px; margin:auto; text-align:left; font-size:22px; line-height:1.6;">
+        <h2>Responding</h2>
+        <p>After the dots disappear, the empty circles will remain on the screen.</p>
+        <p>Select the circle that had the most dots.</p>
+        <p>If your choice is incorrect, that option will disappear and you will choose again.</p>
+        <p>You can make up to <strong>4 choices</strong> on each trial.</p>
+      </div>
+      `,
+      `
+      <div style="max-width:900px; margin:auto; text-align:left; font-size:22px; line-height:1.6;">
+        <h2>Points and bonus</h2>
+        <p>Your guaranteed compensation is <strong>$12</strong>: a $9.50 MTurk reward plus a $2.50 completion bonus.</p>
+        <p>In the main task, you will earn an additional <strong>$0.50 performance bonus for every 200 points</strong>.</p>
+        <p>Only main task trials count toward your bonus.</p>
+        <p>In the main task, a correct answer on the first, second, third, or fourth choice earns <strong>4, 3, 2, or 1 point(s)</strong>, respectively.</p>
+        <p>If none of your first 4 choices is correct, the trial ends and earns <strong>0 points</strong>.</p>
+      </div>
+      `
+    ],
+    show_clickable_nav: true
+  };
+  timeline.push(instructions);
+
+  /**********************************
+   * 12. DISPLAY RENDER FUNCTIONS   *
+   **********************************/
+  function isMainTaskTrial(trialConfig) {
+    return Boolean(trialConfig && !trialConfig.practice && !trialConfig.attentionCheck);
+  }
+
+  function renderProgressBar(percentComplete) {
+    const width = Math.max(0, Math.min(100, percentComplete));
+    return `
+      <div class="progress-shell" aria-label="Task progress">
+        <div class="progress-track">
+          <div class="progress-fill" style="width:${width}%;"></div>
+        </div>
+      </div>
+    `;
+  }
+
+  function getMainTrialProgress(trialConfig, includeCurrentTrial = false) {
+    if (!isMainTaskTrial(trialConfig)) return null;
+
+    const mainIndex = mainTrials.findIndex(trial => trial.trialIndex === trialConfig.trialIndex);
+    if (mainIndex < 0) return null;
+
+    const completedTrials = mainIndex + (includeCurrentTrial ? 1 : 0);
+    return (completedTrials / mainTrials.length) * 100;
+  }
+
+  function renderMainProgressBar(trialConfig, includeCurrentTrial = false) {
+    const progress = getMainTrialProgress(trialConfig, includeCurrentTrial);
+    return progress === null ? "" : renderProgressBar(progress);
+  }
+
+  function renderTaskDisplayFrame(optionHTML, titleText, subtitleText, trialConfig) {
+    return `
+      ${renderMainProgressBar(trialConfig)}
+      <div class="task-wrap" style="width:${DISPLAY.areaWidthPx}px;">
+        <div class="question-title">${titleText}</div>
+        <div class="question-subtitle">${subtitleText}</div>
+        <div class="pentagon-area" style="width:${DISPLAY.areaWidthPx}px; height:${DISPLAY.areaHeightPx}px;">
+          ${optionHTML}
+        </div>
+      </div>
+    `;
+  }
+
+  function renderStimulusDisplay(trialConfig) {
+    const optionHTML = trialConfig.options.map((opt, idx) => {
+      return `
+        <div class="option-btn" style="${getOptionStyle(idx)} cursor: default;">
+          ${renderOptionSVG(opt, true)}
+        </div>
+      `;
+    }).join("");
+
+    return renderTaskDisplayFrame(optionHTML, "Which circle has the most dots?", "Look carefully.", trialConfig);
+  }
+
+  function renderChoiceDisplay() {
+    const trialConfig = trialState.currentTrial;
+    const optionHTML = trialConfig.options.map((opt, idx) => {
+      const hiddenClass = trialState.available[idx] ? "" : "hidden";
+      return `
+        <div class="option-btn choice-option ${hiddenClass}" style="${getOptionStyle(idx)}"
+             data-index="${idx}"
+             role="button"
+             tabindex="0"
+             aria-label="option ${idx + 1}">
+          ${renderOptionSVG(opt, false)}
+        </div>
+      `;
+    }).join("");
+
+    return renderTaskDisplayFrame(optionHTML, "Which circle has the most dots?", "Look carefully.", trialConfig);
+  }
+
+  function renderOptionSVG(option, showDots = true) {
+    const center = CONFIG.svgSize / 2;
+    const radius = CONFIG.stimulusRadius;
+
+    const outline = `
+      <circle cx="${center}" cy="${center}" r="${radius}"
+        fill="white" stroke="black" stroke-width="3"></circle>
+    `;
+
+    const dots = showDots
+      ? option.points.map(p => {
+          return `<circle cx="${p.x.toFixed(1)}" cy="${p.y.toFixed(1)}" r="2.8" fill="black"></circle>`;
+        }).join("")
+      : "";
+
+    return `
+      <svg width="${DISPLAY.displayedSvgSizePx}" height="${DISPLAY.displayedSvgSizePx}" viewBox="0 0 ${CONFIG.svgSize} ${CONFIG.svgSize}">
+        ${outline}
+        ${dots}
+      </svg>
+    `;
+  }
+
+  /**************************
+   * 13. GENERIC TRIAL PIECES
+   **************************/
+  function makeFullscreenRecoveryTrial(trialConfig, stageName) {
+    return {
+      timeline: [
+        {
+          type: jsPsychFullscreen,
+          fullscreen_mode: true,
+          message: `
+            <div style="max-width:900px; margin:auto; text-align:center; font-size:24px; line-height:1.7;">
+              <h2>Please return to full screen</h2>
+              <p>The experiment needs to continue in full-screen mode.</p>
+              <p>Click the button below to continue.</p>
+            </div>
+          `,
+          button_label: "Return to full screen",
+          data: {
+            event: "fullscreen_reentry",
+            fullscreen_reentry_stage: stageName,
+            task_trial_index: trialConfig.trialIndex,
+            practice: trialConfig.practice,
+            condition_name: trialConfig.condition_name,
+            stimulus_duration: trialConfig.duration,
+            correct_position: trialConfig.correctPosition
+          }
+        }
+      ],
+      conditional_function: function() {
+        return !isFullscreenActive();
+      }
+    };
+  }
+
+  function makeTrialTimeline(trialConfig) {
+    const initTrial = {
+      type: jsPsychCallFunction,
+      func: function() {
+        initializeTrialState(trialConfig);
+      },
+      data: {
+        event: "initialize_trial",
+        task_trial_index: trialConfig.trialIndex,
+        practice: trialConfig.practice,
+        condition_name: trialConfig.condition_name,
+        stimulus_duration: trialConfig.duration,
+        correct_position: trialConfig.correctPosition
+      }
+    };
+
+    const fixation = {
+      type: jsPsychHtmlKeyboardResponse,
+      stimulus: function() {
+        return `
+          ${renderMainProgressBar(trialConfig)}
+          <div class="fixation">+</div>
+        `;
+      },
+      choices: "NO_KEYS",
+      trial_duration: CONFIG.fixationDuration,
+      data: {
+        event: "fixation",
+        task_trial_index: trialConfig.trialIndex,
+        practice: trialConfig.practice,
+        condition_name: trialConfig.condition_name,
+        stimulus_duration: trialConfig.duration,
+        correct_position: trialConfig.correctPosition
+      }
+    };
+
+    const stimulus = {
+      type: jsPsychHtmlKeyboardResponse,
+      stimulus: function() {
+        return renderStimulusDisplay(trialConfig);
+      },
+      choices: "NO_KEYS",
+      trial_duration: trialConfig.duration,
+      data: {
+        event: "stimulus",
+        task_trial_index: trialConfig.trialIndex,
+        practice: trialConfig.practice,
+        condition_name: trialConfig.condition_name,
+        stimulus_duration: trialConfig.duration,
+        correct_position: trialConfig.correctPosition,
+        dot_counts: JSON.stringify(trialConfig.options.map(x => x.nDots))
+      }
+    };
+
+    const choice = {
+      type: jsPsychHtmlKeyboardResponse,
+      stimulus: function() {
+        return renderChoiceDisplay();
+      },
+      choices: "NO_KEYS",
+      on_load: function() {
+        trialState.choiceScreenStartTime = performance.now();
+
+        const clickable = document.querySelectorAll(".choice-option:not(.hidden)");
+        clickable.forEach(btn => {
+          btn.addEventListener("click", function() {
+            const selectedIndex = parseInt(this.dataset.index, 10);
+            const rt = Math.round(performance.now() - trialState.choiceScreenStartTime);
+            const elapsedMs = Math.round(performance.now() - trialState.trialStartTime);
+            const correct = selectedIndex === trialState.currentTrial.correctPosition;
+
+            jsPsych.finishTrial({
+              event: "choice",
+              task_trial_index: trialState.currentTrial.trialIndex,
+              practice: trialState.currentTrial.practice,
+              condition_name: trialState.currentTrial.condition_name,
+              stimulus_duration: trialState.currentTrial.duration,
+              correct_position: trialState.currentTrial.correctPosition,
+              choice_number: trialState.choiceNumber + 1,
+              choice_index: selectedIndex,
+              rt: rt,
+              elapsed_ms_from_trial_start: elapsedMs,
+              correct: correct,
+              remaining_options_before_choice: trialState.available.filter(x => x).length
+            });
+          });
+        });
+      },
+      on_finish: function(data) {
+        trialState.choiceNumber += 1;
+        trialState.lastChoiceCorrect = data.correct;
+        trialState.lastPointsAwarded = data.correct
+          ? getPointsForAttempt(data.choice_number)
+          : 0;
+
+        if (!data.correct) {
+          trialState.available[data.choice_index] = false;
+        }
+      }
+    };
+
+    const chooseUntilCorrect = {
+      timeline: [
+        makeFullscreenRecoveryTrial(trialConfig, "before_choice"),
+        choice
+      ],
+      loop_function: function() {
+        return !trialState.lastChoiceCorrect && trialState.choiceNumber < 4;
+      }
+    };
+
+    const iti = {
+      type: jsPsychHtmlKeyboardResponse,
+      stimulus: function() {
+        return renderTrialFeedback();
+      },
+      choices: "NO_KEYS",
+      trial_duration: CONFIG.correctFeedbackDuration,
+      on_start: function(trial) {
+        const pointsAwarded = trialConfig.practice || trialConfig.attentionCheck
+          ? 0
+          : trialState.lastPointsAwarded;
+        experimentState.totalPoints += pointsAwarded;
+        trial.data.points_awarded = pointsAwarded;
+        trial.data.total_points = experimentState.totalPoints;
+      },
+      data: {
+        event: "iti",
+        task_trial_index: trialConfig.trialIndex,
+        practice: trialConfig.practice,
+        condition_name: trialConfig.condition_name,
+        stimulus_duration: trialConfig.duration,
+        correct_position: trialConfig.correctPosition
+      }
+    };
+
+    return {
+      timeline: [
+        initTrial,
+        makeFullscreenRecoveryTrial(trialConfig, "before_fixation"),
+        fixation,
+        makeFullscreenRecoveryTrial(trialConfig, "before_stimulus"),
+        stimulus,
+        chooseUntilCorrect,
+        makeFullscreenRecoveryTrial(trialConfig, "before_feedback"),
+        iti
+      ]
+    };
+  }
+
+  /***********************
+   * 14. BUILD TIMELINE  *
+   ***********************/
+  practiceBlocks.forEach(block => {
+    timeline.push({
+      type: jsPsychHtmlKeyboardResponse,
+      stimulus: `
+        <div style="max-width:900px; margin:auto; text-align:center; font-size:26px; line-height:1.7;">
+          <h2>${block.title}</h2>
+          ${block.description ? `<p>${block.description}</p>` : ""}
+          <p>You will complete ${block.trials.length} practice trials in this block.</p>
+          <p>Press any key to start.</p>
+        </div>
+      `
+    });
+
+    block.trials.forEach(trialConfig => {
+      timeline.push(makeTrialTimeline(trialConfig));
+    });
+  });
+
+  timeline.push({
+    type: jsPsychHtmlKeyboardResponse,
+    stimulus: `
+      <div style="max-width:900px; margin:auto; text-align:center; font-size:26px; line-height:1.7;">
+        <h2>Main task</h2>
+        <p>Practice is complete.</p>
+        <p>Your guaranteed compensation is $12: a $9.50 MTurk reward plus a $2.50 completion bonus. From this point on, every 200 points earns an additional $0.50 performance bonus.</p>
+        <p>A correct answer on the first, second, third, or fourth choice earns 4, 3, 2, or 1 point(s), respectively.</p>
+        <p>If your first 4 choices are incorrect, the trial ends and earns 0 points.</p>
+        <p>Press any key to begin.</p>
+      </div>
+    `
+  });
+
+  mainTrials.forEach((trialConfig, idx) => {
+    if (idx > 0 && idx % CONFIG.mainTrialsPerBlock === 0) {
+      const percentComplete = Math.round((idx / mainTrials.length) * 100);
+      timeline.push({
+        type: jsPsychHtmlKeyboardResponse,
+        data: {
+          event: "main_break",
+          completed_main_trials: idx,
+          percent_complete: percentComplete
+        },
+        stimulus: function() {
+          return `
+          <div style="max-width:900px; margin:auto; text-align:center; font-size:26px; line-height:1.7;">
+            <h2>Break</h2>
+            <p>You have completed ${percentComplete}% of the main task.</p>
+            <p>You have earned ${experimentState.totalPoints} points so far.</p>
+            <p>You may take a short break now.</p>
+            <p>Press any key when you are ready to continue.</p>
+          </div>
+          `;
+        }
+      });
+    }
+
+    timeline.push(makeTrialTimeline(trialConfig));
+
+    if ((idx + 1) % CONFIG.attentionCheckInterval === 0) {
+      timeline.push(makeTrialTimeline(makeAttentionCheckTrial(trialConfig.trialIndex + 0.5)));
+    }
+  });
+
+  timeline.push({
+    type: jsPsychHtmlKeyboardResponse,
+    stimulus: function() {
+      return `
+      <div style="max-width:900px; margin:auto; text-align:center; font-size:28px; line-height:1.7;">
+        <h2>Finished</h2>
+        <p style="font-size:34px; font-weight:700; color:#178f3c;">
+          Congratulations! You earned ${experimentState.totalPoints} points.
+        </p>
+        <p>You earned <strong>$${getBonusDollars(experimentState.totalPoints).toFixed(2)}</strong> in performance bonus pay.</p>
+        <p>Your MTurk reward is <strong>$${CONFIG.mturkBaseRewardDollars.toFixed(2)}</strong>, and you will receive <strong>$${getManualBonusToPayDollars(experimentState.totalPoints).toFixed(2)}</strong> as a separate bonus.</p>
+        <p>Your total compensation is <strong>$${getTotalCompensationDollars(experimentState.totalPoints).toFixed(2)}</strong>.</p>
+        <p>Thank you for completing the experiment.</p>
+        <p style="font-size:18px; line-height:1.5;">
+          For technical or payment questions, contact
+          <a href="mailto:gt.perception@gmail.com">gt.perception@gmail.com</a>.
+          Please include your MTurk Worker ID, but do not include your study responses.
+        </p>
+        <p>Please submit your responses. Your MTurk completion code will appear only after the server confirms that your data were saved.</p>
+        <button id="save-experiment-btn"
+          style="font-size:22px; padding:12px 22px; margin-top:12px; border:2px solid #222; border-radius:6px; background:white; cursor:pointer;">
+          Submit responses
+        </button>
+        <div id="save-experiment-status" style="font-size:20px; min-height:32px; margin-top:18px; color:#222;"></div>
+
+        <div id="completion-code-wrap" style="display:none;">
+          <p>Your responses were saved successfully.</p>
+          <p>Please return to MTurk and enter this completion code:</p>
+          <div style="display:flex; justify-content:center; align-items:center; gap:12px; flex-wrap:wrap; margin:18px 0;">
+            <input id="completion-code-input" value="" readonly
+              style="font-size:38px; font-weight:700; letter-spacing:0; color:#222; text-align:center; width:280px; padding:8px 12px; border:2px solid #222; border-radius:6px; background:white;" />
+            <button id="copy-completion-code-btn"
+              style="font-size:22px; padding:12px 18px; border:2px solid #222; border-radius:6px; background:white; cursor:pointer;">
+              Copy
+            </button>
+          </div>
+          <div id="completion-copy-status" style="font-size:18px; min-height:26px; color:#178f3c;"></div>
+          <p style="font-size:18px; line-height:1.4;">After saving the code, click the button below to finish the experiment.</p>
+          <button id="finish-experiment-btn"
+            style="font-size:22px; padding:12px 22px; margin-top:12px; border:2px solid #222; border-radius:6px; background:white; cursor:pointer;">
+            I have saved my code
+          </button>
+        </div>
+      </div>
+      `;
+    },
+    choices: "NO_KEYS",
+    on_load: function() {
+      const saveBtn = document.getElementById("save-experiment-btn");
+      const saveStatus = document.getElementById("save-experiment-status");
+      const codeWrap = document.getElementById("completion-code-wrap");
+      const input = document.getElementById("completion-code-input");
+      const copyBtn = document.getElementById("copy-completion-code-btn");
+      const finishBtn = document.getElementById("finish-experiment-btn");
+      const copyStatus = document.getElementById("completion-copy-status");
+
+      function preventCloseUntilSaved(event) {
+        if (experimentSaved) return;
+        event.preventDefault();
+        event.returnValue = "";
+      }
+
+      window.addEventListener("beforeunload", preventCloseUntilSaved);
+
+      function copyCode() {
+        input.focus();
+        input.select();
+
+        const copiedWithClipboard = navigator.clipboard && window.isSecureContext
+          ? navigator.clipboard.writeText(experimentState.completionCode)
+          : Promise.reject(new Error("Clipboard API unavailable"));
+
+        copiedWithClipboard
+          .then(() => {
+            copyStatus.textContent = "Copied.";
+          })
+          .catch(() => {
+            try {
+              document.execCommand("copy");
+              copyStatus.textContent = "Copied.";
+            } catch (error) {
+              copyStatus.textContent = "Please copy or write down the selected code.";
+            }
+          });
+      }
+
+      saveBtn.addEventListener("click", function() {
+        saveBtn.disabled = true;
+        saveBtn.style.cursor = "not-allowed";
+        saveStatus.style.color = "#222";
+        saveStatus.textContent = "Saving responses. Please do not close this window.";
+
+        saveExperimentData()
+          .then(() => {
+            saveStatus.style.color = "#178f3c";
+            saveStatus.textContent = "Responses saved successfully.";
+            saveBtn.style.display = "none";
+            codeWrap.style.display = "block";
+            input.value = experimentState.completionCode;
+            input.focus();
+            input.select();
+            window.removeEventListener("beforeunload", preventCloseUntilSaved);
+          })
+          .catch(error => {
+            console.error("Could not save data to server:", error);
+            saveBtn.disabled = false;
+            saveBtn.style.cursor = "pointer";
+            saveStatus.style.color = "#b00020";
+            saveStatus.innerHTML = "Responses were not saved. Please try again before closing this window. " +
+              "If the problem continues, contact <a href=\"mailto:gt.perception@gmail.com\">gt.perception@gmail.com</a> " +
+              "and include your MTurk Worker ID, but do not include your study responses.";
+          });
+      });
+
+      copyBtn.addEventListener("click", copyCode);
+      finishBtn.addEventListener("click", function() {
+        jsPsych.finishTrial({
+          event: "experiment_end_acknowledged",
+          study_id: experimentState.studyID,
+          total_points: experimentState.totalPoints
+        });
+      });
+    }
+  });
+
+  /***********************
+   * 15. RUN EXPERIMENT  *
+   ***********************/
+  jsPsych.run(timeline);
+</script>
+</html>
